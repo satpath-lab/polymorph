@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoltForge</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<style>
+:root{--bg:#0d0f14;--panel:#151821;--line:#232736;--text:#e6e8ef;--mute:#8a90a6;--acc:#8b5cf6;--ok:#22c55e;--bad:#ef4444}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
+header{height:52px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.logo{font-weight:800;font-size:18px;letter-spacing:.3px}.logo b{color:#ffd84d}
+.grow{flex:1}.pill{font-size:12px;color:var(--mute);padding:4px 10px;border:1px solid var(--line);border-radius:99px}
+.pill.ok{color:var(--ok);border-color:#1f4d33}.pill.bad{color:var(--bad);border-color:#5a2020}
+button,select,input{font:inherit;color:var(--text);background:#1d2130;border:1px solid var(--line);border-radius:8px;padding:7px 12px}
+button{cursor:pointer}button:hover{border-color:var(--acc)}button.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+main{display:grid;grid-template-columns:220px 1fr 420px;height:calc(100% - 52px)}
+aside{border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+aside h4{margin:14px 14px 6px;font-size:11px;text-transform:uppercase;color:var(--mute);letter-spacing:1px}
+#apps{overflow:auto;flex:1}.app{padding:9px 14px;cursor:pointer;display:flex;justify-content:space-between;border-left:3px solid transparent}
+.app:hover{background:#1b1f2b}.app.on{background:#1f2333;border-left-color:var(--acc)}.app small{color:var(--mute)}
+.newapp{padding:12px;border-top:1px solid var(--line);display:grid;gap:8px}
+.mid{display:flex;flex-direction:column;min-width:0;min-height:0}
+.bar{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+#edwrap{flex:1;min-height:0;position:relative}.CodeMirror,#fallback{height:100%;font:13.5px/1.55 ui-monospace,Menlo,monospace}
+#fallback{width:100%;border:0;background:#1e1f29;color:#f8f8f2;padding:12px;resize:none;outline:none;tab-size:2}
+#logs{height:170px;overflow:auto;border-top:1px solid var(--line);background:#0a0c10;font:12px/1.5 ui-monospace,Menlo,monospace;padding:8px 12px;white-space:pre-wrap}
+#logs .t{color:#5b6178}#logs .e{color:#ff8080}#logs .r{color:#a78bfa}
+.right{border-left:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:16px;gap:12px;overflow:auto;background:radial-gradient(circle at 50% 0,#1b1530,var(--bg) 60%)}
+.phone{width:360px;height:720px;border-radius:44px;background:#000;padding:12px;box-shadow:0 30px 80px #0008,0 0 0 2px #2a2f40;flex:none}
+.screen{width:100%;height:100%;border-radius:34px;overflow:hidden;display:flex;flex-direction:column;background:#f4f5f7;color:#1f2328;position:relative}
+.sbar{height:28px;flex:none}.abar{height:52px;display:flex;align-items:center;padding:0 18px;font-size:19px;font-weight:600;color:#fff;background:#6C3BFF;flex:none}
+.content{flex:1;overflow:auto}.content::-webkit-scrollbar{display:none}
+.toast{position:absolute;left:50%;bottom:40px;transform:translateX(-50%);background:#323232;color:#fff;padding:9px 16px;border-radius:20px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
+.toast.on{opacity:1}
+.v-btn{border:0;border-radius:12px;font-weight:700;padding:10px 14px;min-height:48px;cursor:pointer;color:#fff;background:#6C3BFF;font-size:16px;transition:filter .1s}.v-btn:active{filter:brightness(.85)}
+.v-in{border:1px solid #d9dce3;border-radius:12px;padding:12px 14px;font-size:16px;background:#fff;color:#1f2328;outline:none;min-width:0}.v-in:focus{border-color:#6C3BFF}
+.v-tap{cursor:pointer}.v-tap:active{filter:brightness(.93)}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;cursor:pointer}
+.sw i{width:40px;height:22px;border-radius:11px;background:#c5c8d0;position:relative;transition:.15s;flex:none}.sw i:after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}
+.sw.on i{background:#6C3BFF}.sw.on i:after{left:20px}
+.pbar{height:4px;border-radius:2px;background:#0002;overflow:hidden}.pbar>div{height:100%;background:#6C3BFF}
+.spin{width:28px;height:28px;border:3px solid #0002;border-top-color:#6C3BFF;border-radius:50%;animation:s 1s linear infinite;margin:auto}@keyframes s{to{transform:rotate(1turn)}}
+.apk{display:flex;gap:6px;width:360px}.apk input{flex:1;min-width:0}
+.hint{color:var(--mute);font-size:12px;width:360px;text-align:center}
+@media (max-width:1100px){main{grid-template-columns:180px 1fr}.right{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">⚡ Volt<b>Forge</b></div>
+  <span class="pill" id="status">connecting…</span>
+  <div class="grow"></div>
+  <span class="pill" id="ver">v–</span>
+  <button id="reset" title="Reset this preview's state">↺ Reset state</button>
+  <button id="del" title="Delete app">🗑</button>
+</header>
+<main>
+  <aside>
+    <h4>Apps</h4>
+    <div id="apps"></div>
+    <div class="newapp">
+      <input id="nname" placeholder="new-app-name">
+      <select id="nlang"></select>
+      <button class="pri" id="create">+ Create app</button>
+    </div>
+  </aside>
+  <section class="mid">
+    <div class="bar"><b id="fname">—</b><span class="grow"></span><span class="pill" id="save">saved</span></div>
+    <div id="edwrap"><textarea id="fallback" spellcheck="false"></textarea></div>
+    <div id="logs"></div>
+  </section>
+  <section class="right">
+    <div class="phone"><div class="screen" id="screen"><div class="sbar" id="sbar"></div><div class="abar" id="abar">…</div><div class="content" id="content"></div><div class="toast" id="toast"></div></div></div>
+    <div class="apk"><input id="apksrv" title="Server URL the phone will use"><button class="pri" id="apkbtn">⬇ Build APK</button></div>
+    <div class="hint" id="hint"></div>
+  </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/lua/lua.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/ruby/ruby.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/php/php.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const MODES = { '.lua': 'lua', '.py': 'python', '.php': 'application/x-httpd-php', '.js': 'javascript', '.rb': 'ruby' };
+let token = localStorage.getItem('volt_token') || '';
+let sid = localStorage.getItem('volt_sid') || (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+localStorage.setItem('volt_sid', sid);
+let cur = null, ver = -1, watchCtl = null, logAfter = 0, saveT = null, loading = false, meta = {};
+const inputs = {}, inputEls = {}, lastVal = {};
+
+async function api(path, opt = {}) {
+  opt.headers = Object.assign({ 'Content-Type': 'application/json' }, token ? { 'X-Volt-Token': token } : {}, opt.headers || {});
+  const r = await fetch(path, opt);
+  if (r.status === 401) { token = prompt('VOLT_TOKEN for this server:') || ''; localStorage.setItem('volt_token', token); return api(path, opt); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+
+let ed;
+if (window.CodeMirror) {
+  ed = CodeMirror(el => { $('#fallback').replaceWith(el); }, { theme: 'dracula', lineNumbers: true, indentUnit: 2, tabSize: 2, lineWrapping: false,
+    extraKeys: { Tab: cm => cm.execCommand('indentMore'), 'Shift-Tab': cm => cm.execCommand('indentLess'), 'Cmd-S': () => save(), 'Ctrl-S': () => save() } });
+  ed.on('change', () => { if (!loading) dirty(); });
+} else {
+  const ta = $('#fallback');
+  ta.addEventListener('input', () => { if (!loading) dirty(); });
+  ta.addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); } });
+  ed = { getValue: () => ta.value, setValue: v => ta.value = v, setOption() {}, clearHistory() {} };
+}
+
+function dirty() { $('#save').textContent = 'editing…'; $('#save').className = 'pill'; clearTimeout(saveT); saveT = setTimeout(save, 350); }
+async function save() {
+  clearTimeout(saveT); if (!cur) return;
+  try { const r = await api('/api/source/' + cur, { method: 'PUT', body: JSON.stringify({ code: ed.getValue() }) }); $('#save').textContent = 'live ⚡ v' + r.v; $('#save').className = 'pill ok'; }
+  catch (e) { $('#save').textContent = 'save failed: ' + e.message; $('#save').className = 'pill bad'; }
+}
+
+async function loadApps(select) {
+  const list = await api('/api/apps');
+  $('#apps').innerHTML = '';
+  list.forEach(a => {
+    const d = document.createElement('div'); d.className = 'app' + (a.name === cur ? ' on' : '');
+    d.innerHTML = `<span></span><small>${a.lang || '?'}</small>`; d.firstChild.textContent = a.name;
+    d.onclick = () => open(a.name); $('#apps').appendChild(d);
+  });
+  const want = select || location.hash.slice(1) || (list[0] && list[0].name);
+  if (want && want !== cur && list.some(a => a.name === want)) open(want);
+}
+
+async function open(name) {
+  cur = name; location.hash = name; ver = -1; logAfter = 0; $('#logs').innerHTML = '';
+  for (const k in inputEls) delete inputEls[k];
+  document.querySelectorAll('.app').forEach(d => d.classList.toggle('on', d.firstChild.textContent === name));
+  const s = await api('/api/source/' + name);
+  loading = true; ed.setValue(s.code); ed.setOption('mode', MODES[s.ext]); ed.clearHistory && ed.clearHistory(); loading = false;
+  $('#fname').textContent = name + '/' + s.file; $('#save').textContent = 'live ⚡ v' + s.v; $('#save').className = 'pill ok';
+  run(null); watch();
+}
+
+async function run(ev) {
+  if (!cur) return;
+  const name = cur, t0 = performance.now();
+  try {
+    const r = await api('/api/run/' + name, { method: 'POST', body: JSON.stringify({ session: sid, event: ev }) });
+    if (name !== cur) return;
+    ver = r.v; $('#ver').textContent = 'v' + r.v + ' · ' + Math.round(performance.now() - t0) + 'ms';
+    if (r.ui) render(r.ui);
+    const fx = r.fx || {};
+    if (fx.toast) toast(fx.toast);
+    if (fx.open) window.open(fx.open, '_blank');
+    if (fx.vibrate) { const s = $('#screen'); s.animate([{ transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'none' }], { duration: 120, iterations: 2 }); }
+    setStatus(true);
+  } catch (e) { setStatus(false, e.message); }
+}
+
+async function watch() {
+  if (watchCtl) watchCtl.abort();
+  const ctl = watchCtl = new AbortController(), name = cur;
+  while (!ctl.signal.aborted && name === cur) {
+    try {
+      if (ver < 0) { await new Promise(r => setTimeout(r, 100)); continue; }
+      const r = await fetch(`/api/watch/${name}?v=${ver}`, { signal: ctl.signal }).then(r => r.json());
+      setStatus(true);
+      if (r.v !== ver && name === cur) { ver = r.v; await run(null); }
+    } catch (e) { if (ctl.signal.aborted) return; setStatus(false, 'offline'); await new Promise(r => setTimeout(r, 1500)); }
+  }
+}
+
+async function pollLogs() {
+  if (cur) try {
+    const r = await api(`/api/logs/${cur}?after=${logAfter}`);
+    const box = $('#logs'), stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+    r.logs.forEach(([n, t, msg]) => {
+      logAfter = n; const d = document.createElement('div');
+      d.innerHTML = `<span class="t">${t}</span> <span></span>`; d.lastChild.textContent = msg;
+      d.lastChild.className = msg.startsWith('✖') ? 'e' : msg.startsWith('⚡') ? 'r' : ''; box.appendChild(d);
+    });
+    while (box.childNodes.length > 400) box.removeChild(box.firstChild);
+    if (stick) box.scrollTop = box.scrollHeight;
+  } catch (e) {}
+  setTimeout(pollLogs, 800);
+}
+
+function setStatus(ok, msg) { const s = $('#status'); s.textContent = ok ? 'live' : msg || 'offline'; s.className = 'pill ' + (ok ? 'ok' : 'bad'); }
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2000); }
+
+function ev(type, id, value) {
+  const inp = {}; for (const k in inputs) { inp[k] = inputs[k]; lastVal[k] = inputs[k]; }
+  const e = { type, id: id || '', inputs: inp }; if (value !== undefined) e.value = value; return e;
+}
+
+function shade(hex, f) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return hex;
+  const n = parseInt(m[1], 16); const c = s => Math.round(((n >> s) & 255) * f);
+  return `rgb(${c(16)},${c(8)},${c(0)})`;
+}
+
+let backId = null;
+function render(s) {
+  const acc = s.accent || '#6C3BFF';
+  $('#abar').textContent = s.title || cur; $('#abar').style.background = acc; $('#abar').style.display = s.hideBar ? 'none' : 'flex';
+  $('#sbar').style.background = shade(acc, .8);
+  $('#screen').style.background = s.bg || '#f4f5f7';
+  backId = s.back || null;
+  const c = $('#content'), y = c.scrollTop, used = new Set();
+  const node = s.body ? build(s.body, 'col', 'start', used) : document.createElement('div');
+  for (const k in inputEls) if (!used.has(k)) { delete inputEls[k]; delete inputs[k]; delete lastVal[k]; }
+  c.replaceChildren(node); c.scrollTop = y;
+  c.style.overflow = s.scroll === false ? 'hidden' : 'auto';
+}
+
+const px = v => typeof v === 'number' ? v + 'px' : v;
+function build(n, parent, palign, used) {
+  const t = n.type || 'column', id = n.id || '';
+  let el;
+  if (['column', 'row', 'card', 'hscroll'].includes(t)) {
+    el = document.createElement('div');
+    const row = t === 'row' || t === 'hscroll', al = n.align || 'start';
+    const map = { start: 'flex-start', center: 'center', end: 'flex-end' };
+    Object.assign(el.style, { display: 'flex', flexDirection: row ? 'row' : 'column', gap: px(n.gap ?? (t === 'card' ? 6 : 0)) });
+    if (row) { el.style.alignItems = 'center'; el.style.justifyContent = map[al]; } else el.style.alignItems = al === 'start' ? 'stretch' : map[al];
+    if (t === 'hscroll') el.style.overflowX = 'auto';
+    if (t === 'card') Object.assign(el.style, { background: n.bg || '#fff', borderRadius: px(n.radius ?? 16), padding: '16px', boxShadow: `0 ${n.elevation ?? 2}px ${(n.elevation ?? 2) * 3}px #0002` });
+    (n.children || []).forEach(ch => { if (ch && typeof ch === 'object') el.appendChild(build(ch, row ? 'row' : 'col', al, used)); });
+  } else if (t === 'text') {
+    el = document.createElement('div'); el.textContent = n.text ?? '';
+    Object.assign(el.style, { fontSize: (n.size || 16) + 'px', color: n.color || '#1f2328', fontWeight: n.bold ? 700 : 400, fontStyle: n.italic ? 'italic' : '',
+      textAlign: n.align === 'end' ? 'right' : n.align || '', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: n.mono ? 'ui-monospace,Menlo,monospace' : '' });
+    if (n.lines) Object.assign(el.style, { display: '-webkit-box', webkitLineClamp: n.lines, webkitBoxOrient: 'vertical', overflow: 'hidden' });
+  } else if (t === 'button') {
+    el = document.createElement('button'); el.className = 'v-btn'; el.textContent = n.text ?? '';
+    Object.assign(el.style, { background: n.bg || '#6C3BFF', color: n.color || '#fff', fontSize: (n.size || 16) + 'px', borderRadius: px(n.radius ?? 12) });
+    el.disabled = n.enabled === false; el.onclick = () => run(ev('tap', id));
+  } else if (t === 'input') {
+    el = id && inputEls[id]; const fresh = !el;
+    if (fresh) {
+      el = document.createElement(n.multiline ? 'textarea' : 'input'); el.className = 'v-in';
+      if (n.multiline) el.rows = 3;
+      if (id) { inputEls[id] = el; el.addEventListener('input', () => inputs[id] = el.value); }
+      el.addEventListener('keydown', e => { if (e.key === 'Enter' && !n.multiline) run(ev('submit', id, el.value)); });
+    }
+    used.add(id);
+    el.placeholder = n.hint || ''; el.type = n.kind === 'password' || n.password ? 'password' : n.kind === 'number' ? 'text' : (n.kind || 'text');
+    if (n.kind === 'number') el.inputMode = 'decimal';
+    Object.assign(el.style, { background: n.bg || '#fff', color: n.color || '#1f2328', borderRadius: px(n.radius ?? 12), fontSize: (n.size || 16) + 'px' });
+    if ('value' in n) { const sv = String(n.value ?? ''); if (fresh || lastVal[id] === undefined || sv !== lastVal[id]) { if (el.value !== sv) el.value = sv; lastVal[id] = sv; } }
+    if (fresh && id) inputs[id] = el.value;
+    applyBox(el, n, parent, palign); return el;
+  } else if (t === 'switch') {
+    el = document.createElement('div'); el.className = 'sw' + (n.value ? ' on' : '');
+    el.innerHTML = '<span></span><i></i>'; el.firstChild.textContent = n.text || '';
+    Object.assign(el.style, { color: n.color || '#1f2328', fontSize: (n.size || 16) + 'px' });
+    el.onclick = () => { el.classList.toggle('on'); run(ev('change', id, el.classList.contains('on'))); };
+    applyBox(el, n, parent, palign); return el;
+  } else if (t === 'image') {
+    el = document.createElement('img');
+    const src = n.src || ''; el.src = /^https?:/.test(src) ? src : src.startsWith('/') ? src : `/apps/${cur}/assets/${src}`;
+    Object.assign(el.style, { objectFit: n.fit === 'contain' ? 'contain' : 'cover', borderRadius: px(n.radius ?? 12), background: n.bg || '#e5e7eb', height: '180px', display: 'block', minWidth: 0 });
+    if (parent === 'row') el.style.width = '120px';
+  } else if (t === 'spacer') {
+    el = document.createElement('div'); el.style[parent === 'row' ? 'width' : 'height'] = px(n.size || 0); el.style.flex = 'none';
+  } else if (t === 'divider') {
+    el = document.createElement('div'); el.style.background = n.color || '#0000001f';
+    if (parent === 'row') { el.style.width = '1px'; el.style.alignSelf = 'stretch'; } else el.style.height = '1px';
+  } else if (t === 'progress') {
+    el = document.createElement('div');
+    if ('value' in n) { el.className = 'pbar'; el.innerHTML = '<div></div>'; el.firstChild.style.width = Math.max(0, Math.min(1, +n.value || 0)) * 100 + '%'; if (n.color) el.firstChild.style.background = n.color; }
+    else el.className = 'spin';
+  } else { el = document.createElement('div'); el.textContent = '[unknown type: ' + t + ']'; el.style.color = '#b91c1c'; }
+  applyBox(el, n, parent, palign);
+  if (id && !['button', 'input', 'switch'].includes(t)) { el.classList.add('v-tap'); el.onclick = () => run(ev('tap', id)); }
+  if (n.bg && !['button', 'card', 'image'].includes(t)) el.style.background = n.bg;
+  if (n.radius != null && !['button', 'card', 'image'].includes(t)) el.style.borderRadius = px(n.radius);
+  return el;
+}
+
+function applyBox(el, n, parent, palign) {
+  const p = n.padding;
+  if (p != null) el.style.padding = Array.isArray(p) ? p.map(px).join(' ') : px(p);
+  if (n.margin != null) el.style.margin = px(n.margin);
+  const dim = v => v === 'fill' ? '100%' : v === 'wrap' ? 'auto' : px(v);
+  if (n.width != null) { el.style.width = dim(n.width); el.style.flex = 'none'; }
+  if (n.height != null) el.style.height = dim(n.height);
+  if (n.flex != null) { el.style.flex = n.flex + ' 1 0'; el.style.minWidth = '0'; el.style.minHeight = '0'; }
+  if (n.opacity != null) el.style.opacity = n.opacity;
+  if (n.visible === false) el.style.display = 'none';
+  el.style.boxSizing = 'border-box';
+}
+
+$('#create').onclick = async () => {
+  const name = $('#nname').value.trim().toLowerCase();
+  try { await api('/api/apps', { method: 'POST', body: JSON.stringify({ name, ext: $('#nlang').value }) }); $('#nname').value = ''; await loadApps(name); }
+  catch (e) { alert(e.message); }
+};
+$('#reset').onclick = async () => { if (!cur) return; await api('/api/reset/' + cur, { method: 'POST', body: JSON.stringify({ session: sid }) }); for (const k in inputEls) delete inputEls[k]; run(null); };
+$('#del').onclick = async () => { if (cur && confirm(`Delete app "${cur}" and its files?`)) { await api('/api/apps/' + cur, { method: 'DELETE' }); cur = null; location.hash = ''; loadApps(); } };
+$('#apkbtn').onclick = () => {
+  if (!cur) return;
+  const q = new URLSearchParams({ server: $('#apksrv').value.trim() }); if (token) q.set('token', token);
+  $('#hint').textContent = 'Building APK…'; location.href = `/api/apk/${cur}?${q}`;
+  setTimeout(() => $('#hint').textContent = 'Install on a phone that can reach that URL. Edits go live on it instantly.', 4000);
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && backId && document.activeElement === document.body) run(ev('tap', backId)); });
+
+(async () => {
+  try {
+    meta = await api('/api/meta');
+    $('#nlang').innerHTML = Object.entries(meta.langs).map(([e, n]) => `<option value="${e}">${n}</option>`).join('');
+    const host = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? meta.ip + ':' + meta.port : location.host;
+    $('#apksrv').value = location.protocol + '//' + host;
+    $('#hint').textContent = 'Emulator? use http://10.0.2.2:' + meta.port;
+    setStatus(true); await loadApps(); pollLogs();
+  } catch (e) { setStatus(false, e.message); }
+})();
+</script>
+</body>
+</html>

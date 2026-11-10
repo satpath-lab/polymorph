@@ -1,0 +1,19 @@
+const fs = require('fs'), vm = require('vm'), readline = require('readline');
+const path = process.argv[2];
+const log = (...a) => process.stderr.write(a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' ') + '\n');
+const ctx = vm.createContext({ console: { log, error: log, warn: log, info: log }, require, module: { exports: {} }, Buffer, process: { env: process.env } });
+let loadErr = null;
+try { vm.runInContext(fs.readFileSync(path, 'utf8'), ctx, { filename: path }); } catch (e) { loadErr = e; }
+const fn = n => ctx[n] || ctx.module.exports[n];
+readline.createInterface({ input: process.stdin }).on('line', line => {
+  let res;
+  try {
+    if (loadErr) throw loadErr;
+    const req = JSON.parse(line);
+    let st = req.state;
+    if (st == null) st = fn('init') ? fn('init')() : {};
+    if (req.event != null && fn('update')) { const r = fn('update')(st, req.event); if (r !== undefined) st = r; }
+    res = { state: st, ui: fn('view')(st) };
+  } catch (e) { res = { error: String((e && e.stack) || e).split('\n').slice(0, 5).join('\n') }; }
+  process.stdout.write(JSON.stringify(res) + '\n');
+});
