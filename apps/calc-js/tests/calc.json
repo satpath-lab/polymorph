@@ -1,0 +1,11 @@
+[
+  {
+    "name": "computes with a multi-file module",
+    "steps": [
+      { "event": { "type": "tap", "id": "k:7", "inputs": {} } },
+      { "event": { "type": "tap", "id": "k:×", "inputs": {} } },
+      { "event": { "type": "tap", "id": "k:6", "inputs": {} } },
+      { "event": { "type": "tap", "id": "k:=", "inputs": {} }, "expect": { "state.result": "42" } }
+    ]
+  }
+]

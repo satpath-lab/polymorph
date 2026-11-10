@@ -1,4 +1,6 @@
+data/
 build/
 __pycache__/
 *.apk
+*.keystore
 .DS_Store

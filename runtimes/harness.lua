@@ -1,4 +1,5 @@
 local path = arg[1]
+package.path = "./?.lua;./?/init.lua;./lib/?.lua;" .. package.path
 local out = io.stdout
 print = function(...) local t = {} for i = 1, select('#', ...) do t[#t+1] = tostring((select(i, ...))) end io.stderr:write(table.concat(t, "\t"), "\n") io.stderr:flush() end
 local esc = {['"']='\\"', ['\\']='\\\\', ['\b']='\\b', ['\f']='\\f', ['\n']='\\n', ['\r']='\\r', ['\t']='\\t'}

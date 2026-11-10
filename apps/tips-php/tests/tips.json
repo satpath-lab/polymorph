@@ -1,0 +1,9 @@
+[
+  {
+    "name": "splits a bill",
+    "steps": [
+      { "event": { "type": "tap", "id": "pct:20", "inputs": { "bill": "100" } }, "expect": { "state.pct": 20 } },
+      { "event": { "type": "tap", "id": "more", "inputs": { "bill": "100" } }, "expect": { "state.people": 2, "ui.body.children.5.children.1.text": "60.00" } }
+    ]
+  }
+]

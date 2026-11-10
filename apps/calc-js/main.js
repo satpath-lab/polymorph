@@ -1,3 +1,5 @@
+const { evaluate } = require('./lib/evaluate');
+
 function init() { return { expr: '', result: '0' }; }
 
 function update(s, e) {
@@ -5,7 +7,7 @@ function update(s, e) {
   if (k === 'C') { s.expr = ''; s.result = '0'; }
   else if (k === '⌫') s.expr = s.expr.slice(0, -1);
   else if (k === '=') {
-    try { s.result = String(+Function('"use strict";return (' + s.expr.replace(/×/g, '*').replace(/÷/g, '/') + ')')().toFixed(10)); s.expr = s.result; }
+    try { s.result = evaluate(s.expr); s.expr = s.result; }
     catch (_) { s.result = 'Error'; }
   } else s.expr += k;
   return s;

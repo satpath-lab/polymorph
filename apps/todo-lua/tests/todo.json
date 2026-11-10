@@ -1,0 +1,11 @@
+[
+  {
+    "name": "add, toggle and clear tasks",
+    "steps": [
+      { "event": null, "expect": { "ui.title": "Tasks" } },
+      { "event": { "type": "submit", "id": "new", "inputs": { "new": "  Ship it  " } }, "expect": { "state.items.0.text": "Ship it", "fx.toast": "Added" } },
+      { "event": { "type": "tap", "id": "item:1", "inputs": {} }, "expect": { "state.items.0.done": true } },
+      { "event": { "type": "tap", "id": "clear", "inputs": {} }, "expect": { "state.items": [] } }
+    ]
+  }
+]

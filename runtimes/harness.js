@@ -1,7 +1,7 @@
 const fs = require('fs'), vm = require('vm'), readline = require('readline');
 const path = process.argv[2];
 const log = (...a) => process.stderr.write(a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' ') + '\n');
-const ctx = vm.createContext({ console: { log, error: log, warn: log, info: log }, require, module: { exports: {} }, Buffer, process: { env: process.env } });
+const ctx = vm.createContext({ console: { log, error: log, warn: log, info: log }, require: require('module').createRequire(require('path').resolve(path)), module: { exports: {} }, Buffer, process: { env: process.env } });
 let loadErr = null;
 try { vm.runInContext(fs.readFileSync(path, 'utf8'), ctx, { filename: path }); } catch (e) { loadErr = e; }
 const fn = n => ctx[n] || ctx.module.exports[n];

@@ -60,7 +60,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    String server = "", app = "", session, token = "";
+    String server = "", app = "", session, token = "", channel = "dev";
     boolean locked, started, hasContent;
     volatile boolean watching;
     volatile long ver = -1;
@@ -90,10 +90,10 @@ public class MainActivity extends Activity {
         if (session == null) { session = UUID.randomUUID().toString(); prefs.edit().putString("sid", session).apply(); }
         try {
             JSONObject cfg = new JSONObject(readAll(getAssets().open("volt.json")));
-            server = cfg.optString("server"); app = cfg.optString("app"); token = cfg.optString("token");
+            server = cfg.optString("server"); app = cfg.optString("app"); token = cfg.optString("token"); channel = cfg.optString("channel", "dev");
         } catch (Exception ignored) {}
         locked = !app.isEmpty();
-        if (!locked) { server = prefs.getString("server", server); app = prefs.getString("app", ""); }
+        if (!locked) { channel = "dev"; server = prefs.getString("server", server); app = prefs.getString("app", ""); }
         if (app.isEmpty()) showConnect(); else start();
     }
 
@@ -119,7 +119,7 @@ public class MainActivity extends Activity {
             while (watching && watchApp.equals(app)) {
                 try {
                     if (ver < 0) { Thread.sleep(150); continue; }
-                    JSONObject r = http("GET", "/api/watch/" + watchApp + "?v=" + ver, null, 35000);
+                    JSONObject r = http("GET", "/api/watch/" + watchApp + "?ch=" + channel + "&v=" + ver, null, 35000);
                     long v = r.optLong("v", ver);
                     if (v != ver && watching) { ver = v; send(null); }
                 } catch (Exception e) {
@@ -148,7 +148,7 @@ public class MainActivity extends Activity {
                 JSONObject body = new JSONObject();
                 body.put("session", session);
                 body.put("event", ev == null ? JSONObject.NULL : ev);
-                final JSONObject r = http("POST", "/api/run/" + a, body.toString(), 20000);
+                final JSONObject r = http("POST", "/api/run/" + a + "?ch=" + channel, body.toString(), 20000);
                 main.post(() -> { if (a.equals(app)) apply(r); });
             } catch (final Exception e) {
                 main.post(() -> showError(e));
@@ -361,7 +361,7 @@ public class MainActivity extends Activity {
                 iv.setClipToOutline(true);
                 bg(iv, color(n.optString("bg", ""), 0xFFE5E7EB), n.optDouble("radius", 12));
                 String src = n.optString("src", "");
-                final String url = src.startsWith("http") ? src : server + (src.startsWith("/") ? "" : "/apps/" + app + "/assets/") + src;
+                final String url = src.startsWith("http") ? src : server + (src.startsWith("/") ? "" : "/apps/" + app + "/assets/") + src + (src.startsWith("/") ? "" : "?ch=" + channel);
                 Bitmap cached = images.get(url);
                 if (cached != null) iv.setImageBitmap(cached);
                 else if (!src.isEmpty()) imgPool.execute(() -> {
@@ -547,7 +547,7 @@ public class MainActivity extends Activity {
     @Override public boolean onOptionsItemSelected(MenuItem i) {
         if (i.getItemId() == 1 && started) send(null);
         else if (i.getItemId() == 2 && started) net.execute(() -> {
-            try { http("POST", "/api/reset/" + app, new JSONObject().put("session", session).toString(), 8000); } catch (Exception ignored) {}
+            try { http("POST", "/api/reset/" + app + "?ch=" + channel, new JSONObject().put("session", session).toString(), 8000); } catch (Exception ignored) {}
             main.post(() -> { inputViews.clear(); inputs.clear(); lastServerVal.clear(); send(null); });
         });
         else if (i.getItemId() == 3) showConnect();

@@ -1,0 +1,10 @@
+[
+  {
+    "name": "renders and counts",
+    "steps": [
+      { "event": null, "expect": { "state.count": 0, "ui.title": "Counter" } },
+      { "event": { "type": "tap", "id": "inc", "inputs": {} }, "expect": { "state.count": 1 } },
+      { "event": { "type": "tap", "id": "reset", "inputs": {} }, "expect": { "state.count": 0, "fx.toast": "Reset!" } }
+    ]
+  }
+]

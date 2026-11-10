@@ -6,34 +6,42 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
 <style>
-:root{--bg:#0d0f14;--panel:#151821;--line:#232736;--text:#e6e8ef;--mute:#8a90a6;--acc:#8b5cf6;--ok:#22c55e;--bad:#ef4444}
+:root{--bg:#0d0f14;--panel:#151821;--line:#232736;--text:#e6e8ef;--mute:#8a90a6;--acc:#8b5cf6;--ok:#22c55e;--bad:#ef4444;--warn:#f59e0b}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
-header{height:52px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
-.logo{font-weight:800;font-size:18px;letter-spacing:.3px}.logo b{color:#ffd84d}
-.grow{flex:1}.pill{font-size:12px;color:var(--mute);padding:4px 10px;border:1px solid var(--line);border-radius:99px}
-.pill.ok{color:var(--ok);border-color:#1f4d33}.pill.bad{color:var(--bad);border-color:#5a2020}
-button,select,input{font:inherit;color:var(--text);background:#1d2130;border:1px solid var(--line);border-radius:8px;padding:7px 12px}
+header{height:52px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.logo{font-weight:800;font-size:18px}.logo b{color:#ffd84d}.grow{flex:1}
+.pill{font-size:12px;color:var(--mute);padding:4px 10px;border:1px solid var(--line);border-radius:99px;white-space:nowrap}
+.pill.ok{color:var(--ok);border-color:#1f4d33}.pill.bad{color:var(--bad);border-color:#5a2020}.pill.warn{color:var(--warn);border-color:#5a4210}
+button,select,input{font:inherit;color:var(--text);background:#1d2130;border:1px solid var(--line);border-radius:8px;padding:6px 11px}
 button{cursor:pointer}button:hover{border-color:var(--acc)}button.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
-main{display:grid;grid-template-columns:220px 1fr 420px;height:calc(100% - 52px)}
+button.sm{padding:3px 8px;font-size:12px}button:disabled{opacity:.45;cursor:not-allowed}
+main{display:grid;grid-template-columns:240px 1fr 420px;height:calc(100% - 52px)}
 aside{border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
-aside h4{margin:14px 14px 6px;font-size:11px;text-transform:uppercase;color:var(--mute);letter-spacing:1px}
-#apps{overflow:auto;flex:1}.app{padding:9px 14px;cursor:pointer;display:flex;justify-content:space-between;border-left:3px solid transparent}
-.app:hover{background:#1b1f2b}.app.on{background:#1f2333;border-left-color:var(--acc)}.app small{color:var(--mute)}
-.newapp{padding:12px;border-top:1px solid var(--line);display:grid;gap:8px}
+aside h4{margin:12px 14px 6px;font-size:11px;text-transform:uppercase;color:var(--mute);letter-spacing:1px;display:flex;justify-content:space-between;align-items:center}
+.list{overflow:auto}.item{padding:6px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:6px;border-left:3px solid transparent;align-items:center}
+.item:hover{background:#1b1f2b}.item.on{background:#1f2333;border-left-color:var(--acc)}.item small{color:var(--mute)}
+.item .x{visibility:hidden;color:var(--mute);border:0;background:none;padding:0 4px}.item:hover .x{visibility:visible}
+#apps{max-height:34%}#files{flex:1;font:12.5px ui-monospace,Menlo,monospace}
+.newapp{padding:10px;border-top:1px solid var(--line);display:grid;gap:6px}
 .mid{display:flex;flex-direction:column;min-width:0;min-height:0}
-.bar{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
-#edwrap{flex:1;min-height:0;position:relative}.CodeMirror,#fallback{height:100%;font:13.5px/1.55 ui-monospace,Menlo,monospace}
-#fallback{width:100%;border:0;background:#1e1f29;color:#f8f8f2;padding:12px;resize:none;outline:none;tab-size:2}
-#logs{height:170px;overflow:auto;border-top:1px solid var(--line);background:#0a0c10;font:12px/1.5 ui-monospace,Menlo,monospace;padding:8px 12px;white-space:pre-wrap}
-#logs .t{color:#5b6178}#logs .e{color:#ff8080}#logs .r{color:#a78bfa}
-.right{border-left:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:16px;gap:12px;overflow:auto;background:radial-gradient(circle at 50% 0,#1b1530,var(--bg) 60%)}
-.phone{width:360px;height:720px;border-radius:44px;background:#000;padding:12px;box-shadow:0 30px 80px #0008,0 0 0 2px #2a2f40;flex:none}
+.bar{display:flex;gap:8px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+#edwrap{flex:1;min-height:0}.CodeMirror,#fallback{height:100%;font:13.5px/1.55 ui-monospace,Menlo,monospace}
+#fallback{width:100%;border:0;background:#1e1f29;color:#f8f8f2;padding:12px;resize:none;outline:none}
+.tabs{display:flex;border-top:1px solid var(--line);background:var(--panel)}.tabs button{border:0;border-radius:0;background:none;color:var(--mute);padding:8px 14px;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--text);border-bottom-color:var(--acc)}
+.pane{height:230px;overflow:auto;background:#0a0c10;padding:8px 12px;display:none}.pane.on{display:block}
+#logs{font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap}#logs .t{color:#5b6178}#logs .e{color:#ff8080}#logs .r{color:#a78bfa}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:500}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}.ok{color:var(--ok)}.bad{color:var(--bad)}.mute{color:var(--mute)}
+code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;word-break:break-all}
+.right{border-left:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px;gap:10px;overflow:auto;background:radial-gradient(circle at 50% 0,#1b1530,var(--bg) 60%)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg button{border:0;border-radius:0;background:none}.seg button.on{background:var(--acc);color:#fff}
+.phone{width:360px;height:700px;border-radius:44px;background:#000;padding:12px;box-shadow:0 30px 80px #0008,0 0 0 2px #2a2f40;flex:none}
 .screen{width:100%;height:100%;border-radius:34px;overflow:hidden;display:flex;flex-direction:column;background:#f4f5f7;color:#1f2328;position:relative}
 .sbar{height:28px;flex:none}.abar{height:52px;display:flex;align-items:center;padding:0 18px;font-size:19px;font-weight:600;color:#fff;background:#6C3BFF;flex:none}
 .content{flex:1;overflow:auto}.content::-webkit-scrollbar{display:none}
-.toast{position:absolute;left:50%;bottom:40px;transform:translateX(-50%);background:#323232;color:#fff;padding:9px 16px;border-radius:20px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
-.toast.on{opacity:1}
-.v-btn{border:0;border-radius:12px;font-weight:700;padding:10px 14px;min-height:48px;cursor:pointer;color:#fff;background:#6C3BFF;font-size:16px;transition:filter .1s}.v-btn:active{filter:brightness(.85)}
+.toast{position:absolute;left:50%;bottom:40px;transform:translateX(-50%);background:#323232;color:#fff;padding:9px 16px;border-radius:20px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}.toast.on{opacity:1}
+.v-btn{border:0;border-radius:12px;font-weight:700;padding:10px 14px;min-height:48px;cursor:pointer;color:#fff;background:#6C3BFF;font-size:16px}.v-btn:active{filter:brightness(.85)}
 .v-in{border:1px solid #d9dce3;border-radius:12px;padding:12px 14px;font-size:16px;background:#fff;color:#1f2328;outline:none;min-width:0}.v-in:focus{border-color:#6C3BFF}
 .v-tap{cursor:pointer}.v-tap:active{filter:brightness(.93)}
 .sw{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;cursor:pointer}
@@ -41,25 +49,30 @@ aside h4{margin:14px 14px 6px;font-size:11px;text-transform:uppercase;color:var(
 .sw.on i{background:#6C3BFF}.sw.on i:after{left:20px}
 .pbar{height:4px;border-radius:2px;background:#0002;overflow:hidden}.pbar>div{height:100%;background:#6C3BFF}
 .spin{width:28px;height:28px;border:3px solid #0002;border-top-color:#6C3BFF;border-radius:50%;animation:s 1s linear infinite;margin:auto}@keyframes s{to{transform:rotate(1turn)}}
-.apk{display:flex;gap:6px;width:360px}.apk input{flex:1;min-width:0}
-.hint{color:var(--mute);font-size:12px;width:360px;text-align:center}
-@media (max-width:1100px){main{grid-template-columns:180px 1fr}.right{display:none}}
+.apk{display:flex;gap:6px;width:360px}.apk input{flex:1;min-width:0}.hint{color:var(--mute);font-size:12px;width:360px;text-align:center}
+#login{position:fixed;inset:0;background:#0d0f14ee;display:none;align-items:center;justify-content:center;z-index:9}
+#login form{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px;display:grid;gap:10px;width:320px}
+#banner{display:none;background:#3a2a05;color:#ffd77a;padding:6px 16px;font-size:12.5px;text-align:center}
+@media (max-width:1150px){main{grid-template-columns:200px 1fr}.right{display:none}}
 </style>
 </head>
 <body>
+<div id="banner">⚠ Open mode: no users exist, so anyone who can reach this server has admin rights. Create one with <code>volt.py user add &lt;name&gt; --role admin</code>.</div>
 <header>
   <div class="logo">⚡ Volt<b>Forge</b></div>
   <span class="pill" id="status">connecting…</span>
   <div class="grow"></div>
   <span class="pill" id="ver">v–</span>
-  <button id="reset" title="Reset this preview's state">↺ Reset state</button>
-  <button id="del" title="Delete app">🗑</button>
+  <span class="pill" id="who"></span>
+  <button id="logout" class="sm">Log out</button>
 </header>
 <main>
   <aside>
     <h4>Apps</h4>
-    <div id="apps"></div>
-    <div class="newapp">
+    <div class="list" id="apps"></div>
+    <h4>Files <span><button class="sm" id="newfile" title="New file">+ file</button></span></h4>
+    <div class="list" id="files"></div>
+    <div class="newapp dev-only">
       <input id="nname" placeholder="new-app-name">
       <select id="nlang"></select>
       <button class="pri" id="create">+ Create app</button>
@@ -68,14 +81,31 @@ aside h4{margin:14px 14px 6px;font-size:11px;text-transform:uppercase;color:var(
   <section class="mid">
     <div class="bar"><b id="fname">—</b><span class="grow"></span><span class="pill" id="save">saved</span></div>
     <div id="edwrap"><textarea id="fallback" spellcheck="false"></textarea></div>
-    <div id="logs"></div>
+    <div class="tabs" id="tabs">
+      <button data-p="logs" class="on">Logs</button><button data-p="tests">Tests</button><button data-p="releases">Releases</button><button data-p="audit">Audit</button><button data-p="users" class="admin-only">Users &amp; tokens</button>
+    </div>
+    <div class="pane on" id="p-logs"><div id="logs"></div></div>
+    <div class="pane" id="p-tests"><div class="row"><button class="pri dev-only" id="runtests">▶ Run tests</button><span class="mute">Cases live in <code>tests/*.json</code>. A release is blocked unless every case passes.</span></div><div id="testout"></div></div>
+    <div class="pane" id="p-releases">
+      <div class="row dev-only"><input id="relnote" placeholder="Release note" style="flex:1"><button class="pri" id="mkrel">Create release</button>
+        <label class="admin-only mute"><input type="checkbox" id="reldeploy"> deploy now</label><label class="admin-only mute"><input type="checkbox" id="relforce"> force</label></div>
+      <div id="rellist"></div>
+    </div>
+    <div class="pane" id="p-audit"><div id="auditlist"></div></div>
+    <div class="pane" id="p-users">
+      <div class="row"><input id="uname" placeholder="username"><input id="upass" type="password" placeholder="password (8+)"><select id="urole"><option>developer</option><option>viewer</option><option>admin</option></select><button class="pri" id="uadd">Save user</button></div>
+      <div id="ulist"></div>
+      <div class="row" style="margin-top:12px"><input id="toklabel" placeholder="token label (e.g. github-ci)"><button id="mktok">Create API token</button><span id="tokout"></span></div>
+    </div>
   </section>
   <section class="right">
+    <div class="seg" id="chan"><button data-c="dev" class="on">Dev (live draft)</button><button data-c="prod">Production</button></div>
     <div class="phone"><div class="screen" id="screen"><div class="sbar" id="sbar"></div><div class="abar" id="abar">…</div><div class="content" id="content"></div><div class="toast" id="toast"></div></div></div>
-    <div class="apk"><input id="apksrv" title="Server URL the phone will use"><button class="pri" id="apkbtn">⬇ Build APK</button></div>
+    <div class="apk dev-only"><input id="apksrv" title="Server URL the phone will use"><select id="apkch"><option value="prod">prod</option><option value="dev">dev</option></select><button class="pri" id="apkbtn">⬇ APK</button></div>
     <div class="hint" id="hint"></div>
   </section>
 </main>
+<div id="login"><form id="loginform"><div class="logo">⚡ Volt<b>Forge</b></div><input id="luser" placeholder="username" autocomplete="username"><input id="lpass" type="password" placeholder="password" autocomplete="current-password"><button class="pri">Sign in</button><div id="lerr" class="bad"></div></form></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/lua/lua.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
@@ -88,106 +118,209 @@ aside h4{margin:14px 14px 6px;font-size:11px;text-transform:uppercase;color:var(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/php/php.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-const MODES = { '.lua': 'lua', '.py': 'python', '.php': 'application/x-httpd-php', '.js': 'javascript', '.rb': 'ruby' };
-let token = localStorage.getItem('volt_token') || '';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const MODES = { lua: 'lua', py: 'python', php: 'application/x-httpd-php', js: 'javascript', json: { name: 'javascript', json: true }, rb: 'ruby', md: null, txt: null };
+const RANK = { viewer: 1, developer: 2, admin: 3 };
+let token = localStorage.getItem('volt_token') || '', me = null;
 let sid = localStorage.getItem('volt_sid') || (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
 localStorage.setItem('volt_sid', sid);
-let cur = null, ver = -1, watchCtl = null, logAfter = 0, saveT = null, loading = false, meta = {};
+let cur = null, curFile = null, chan = 'dev', ver = -1, watchCtl = null, logAfter = 0, saveT = null, loading = false, meta = {};
 const inputs = {}, inputEls = {}, lastVal = {};
 
 async function api(path, opt = {}) {
   opt.headers = Object.assign({ 'Content-Type': 'application/json' }, token ? { 'X-Volt-Token': token } : {}, opt.headers || {});
   const r = await fetch(path, opt);
-  if (r.status === 401) { token = prompt('VOLT_TOKEN for this server:') || ''; localStorage.setItem('volt_token', token); return api(path, opt); }
+  if (r.status === 401) { showLogin(); throw new Error('login required'); }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || r.status);
+  if (!r.ok) { const e = new Error(j.error || r.status); e.data = j; throw e; }
   return j;
 }
+const can = role => me && RANK[me.role] >= RANK[role];
+
+function showLogin() { $('#login').style.display = 'flex'; $('#luser').focus(); }
+$('#loginform').onsubmit = async e => {
+  e.preventDefault(); $('#lerr').textContent = '';
+  try {
+    const r = await fetch('/api/login', { method: 'POST', body: JSON.stringify({ user: $('#luser').value, password: $('#lpass').value }) }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error); return j; });
+    token = r.token; localStorage.setItem('volt_token', token); $('#login').style.display = 'none'; boot();
+  } catch (err) { $('#lerr').textContent = err.message; }
+};
+$('#logout').onclick = async () => { try { await api('/api/logout', { method: 'POST' }); } catch (e) {} token = ''; localStorage.removeItem('volt_token'); location.reload(); };
 
 let ed;
 if (window.CodeMirror) {
-  ed = CodeMirror(el => { $('#fallback').replaceWith(el); }, { theme: 'dracula', lineNumbers: true, indentUnit: 2, tabSize: 2, lineWrapping: false,
+  ed = CodeMirror(el => { $('#fallback').replaceWith(el); }, { theme: 'dracula', lineNumbers: true, indentUnit: 2, tabSize: 2,
     extraKeys: { Tab: cm => cm.execCommand('indentMore'), 'Shift-Tab': cm => cm.execCommand('indentLess'), 'Cmd-S': () => save(), 'Ctrl-S': () => save() } });
   ed.on('change', () => { if (!loading) dirty(); });
 } else {
   const ta = $('#fallback');
   ta.addEventListener('input', () => { if (!loading) dirty(); });
   ta.addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); } });
-  ed = { getValue: () => ta.value, setValue: v => ta.value = v, setOption() {}, clearHistory() {} };
+  ed = { getValue: () => ta.value, setValue: v => ta.value = v, setOption(k, v) { if (k === 'readOnly') ta.readOnly = !!v; }, clearHistory() {} };
 }
 
-function dirty() { $('#save').textContent = 'editing…'; $('#save').className = 'pill'; clearTimeout(saveT); saveT = setTimeout(save, 350); }
+function dirty() { if (!can('developer')) return; $('#save').textContent = 'editing…'; $('#save').className = 'pill'; clearTimeout(saveT); saveT = setTimeout(save, 450); }
 async function save() {
-  clearTimeout(saveT); if (!cur) return;
-  try { const r = await api('/api/source/' + cur, { method: 'PUT', body: JSON.stringify({ code: ed.getValue() }) }); $('#save').textContent = 'live ⚡ v' + r.v; $('#save').className = 'pill ok'; }
-  catch (e) { $('#save').textContent = 'save failed: ' + e.message; $('#save').className = 'pill bad'; }
+  clearTimeout(saveT); if (!cur || !curFile || !can('developer')) return;
+  try {
+    const r = await api(`/api/file/${cur}?path=${encodeURIComponent(curFile)}`, { method: 'PUT', body: JSON.stringify({ code: ed.getValue(), audit: false }) });
+    $('#save').textContent = 'live in dev ⚡ v' + r.v; $('#save').className = 'pill ok';
+  } catch (e) { $('#save').textContent = 'save failed: ' + e.message; $('#save').className = 'pill bad'; }
 }
 
 async function loadApps(select) {
   const list = await api('/api/apps');
-  $('#apps').innerHTML = '';
-  list.forEach(a => {
-    const d = document.createElement('div'); d.className = 'app' + (a.name === cur ? ' on' : '');
-    d.innerHTML = `<span></span><small>${a.lang || '?'}</small>`; d.firstChild.textContent = a.name;
-    d.onclick = () => open(a.name); $('#apps').appendChild(d);
-  });
+  $('#apps').innerHTML = list.map(a => `<div class="item${a.name === cur ? ' on' : ''}" data-a="${esc(a.name)}"><span>${esc(a.name)}</span><small>${esc(a.lang || '?')}${a.prod ? ' · r' + a.prod : ''}</small></div>`).join('');
+  document.querySelectorAll('#apps .item').forEach(d => d.onclick = () => open(d.dataset.a));
   const want = select || location.hash.slice(1) || (list[0] && list[0].name);
   if (want && want !== cur && list.some(a => a.name === want)) open(want);
 }
 
+async function loadFiles(selectPath) {
+  const files = await api('/api/files/' + cur);
+  $('#files').innerHTML = files.map(f => `<div class="item${f.path === curFile ? ' on' : ''}" data-f="${esc(f.path)}"><span>${esc(f.path)}</span>${can('developer') && !/^main\./.test(f.path) ? '<button class="x" title="Delete">×</button>' : ''}</div>`).join('');
+  document.querySelectorAll('#files .item').forEach(d => {
+    d.onclick = e => { if (e.target.classList.contains('x')) delFile(d.dataset.f); else openFile(d.dataset.f); };
+  });
+  const main = files.find(f => /^main\./.test(f.path));
+  if (selectPath || !curFile) openFile(selectPath || (main && main.path));
+}
+
+async function openFile(path) {
+  if (!path) return;
+  if (saveT) await save();
+  const f = await api(`/api/file/${cur}?path=${encodeURIComponent(path)}`);
+  curFile = path;
+  document.querySelectorAll('#files .item').forEach(d => d.classList.toggle('on', d.dataset.f === path));
+  loading = true; ed.setValue(f.binary ? `// binary file (${f.size} bytes) — not editable here` : f.code);
+  ed.setOption('mode', MODES[path.split('.').pop()] ?? null); ed.setOption('readOnly', f.binary || !can('developer')); ed.clearHistory && ed.clearHistory(); loading = false;
+  $('#fname').textContent = cur + '/' + path; $('#save').textContent = can('developer') ? 'saved' : 'read-only'; $('#save').className = 'pill';
+}
+
+async function delFile(path) {
+  if (!confirm(`Delete ${path}?`)) return;
+  await api(`/api/file/${cur}?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+  if (curFile === path) curFile = null; loadFiles();
+}
+
+$('#newfile').onclick = async () => {
+  if (!cur) return;
+  const p = prompt('New file path (e.g. lib/helpers.lua, tests/login.json):'); if (!p) return;
+  try { await api(`/api/file/${cur}?path=${encodeURIComponent(p)}`, { method: 'PUT', body: JSON.stringify({ code: '' }) }); curFile = null; loadFiles(p); } catch (e) { alert(e.message); }
+};
+
 async function open(name) {
-  cur = name; location.hash = name; ver = -1; logAfter = 0; $('#logs').innerHTML = '';
+  cur = name; curFile = null; location.hash = name; ver = -1; logAfter = 0; $('#logs').innerHTML = '';
   for (const k in inputEls) delete inputEls[k];
-  document.querySelectorAll('.app').forEach(d => d.classList.toggle('on', d.firstChild.textContent === name));
-  const s = await api('/api/source/' + name);
-  loading = true; ed.setValue(s.code); ed.setOption('mode', MODES[s.ext]); ed.clearHistory && ed.clearHistory(); loading = false;
-  $('#fname').textContent = name + '/' + s.file; $('#save').textContent = 'live ⚡ v' + s.v; $('#save').className = 'pill ok';
-  run(null); watch();
+  document.querySelectorAll('#apps .item').forEach(d => d.classList.toggle('on', d.dataset.a === name));
+  await loadFiles(); run(null); watch(); refreshTab();
 }
 
 async function run(ev) {
   if (!cur) return;
-  const name = cur, t0 = performance.now();
+  const name = cur, c = chan, t0 = performance.now();
   try {
-    const r = await api('/api/run/' + name, { method: 'POST', body: JSON.stringify({ session: sid, event: ev }) });
-    if (name !== cur) return;
-    ver = r.v; $('#ver').textContent = 'v' + r.v + ' · ' + Math.round(performance.now() - t0) + 'ms';
+    const r = await api(`/api/run/${name}?ch=${c}`, { method: 'POST', body: JSON.stringify({ session: sid, event: ev }) });
+    if (name !== cur || c !== chan) return;
+    ver = r.v; $('#ver').textContent = c + ' v' + r.v + ' · ' + Math.round(performance.now() - t0) + 'ms';
     if (r.ui) render(r.ui);
     const fx = r.fx || {};
     if (fx.toast) toast(fx.toast);
     if (fx.open) window.open(fx.open, '_blank');
-    if (fx.vibrate) { const s = $('#screen'); s.animate([{ transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'none' }], { duration: 120, iterations: 2 }); }
+    if (fx.vibrate) $('#screen').animate([{ transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'none' }], { duration: 120, iterations: 2 });
     setStatus(true);
   } catch (e) { setStatus(false, e.message); }
 }
 
 async function watch() {
   if (watchCtl) watchCtl.abort();
-  const ctl = watchCtl = new AbortController(), name = cur;
-  while (!ctl.signal.aborted && name === cur) {
+  const ctl = watchCtl = new AbortController(), name = cur, c = chan;
+  while (!ctl.signal.aborted) {
     try {
       if (ver < 0) { await new Promise(r => setTimeout(r, 100)); continue; }
-      const r = await fetch(`/api/watch/${name}?v=${ver}`, { signal: ctl.signal }).then(r => r.json());
+      const r = await fetch(`/api/watch/${name}?ch=${c}&v=${ver}`, { signal: ctl.signal, headers: token ? { 'X-Volt-Token': token } : {} }).then(r => r.json());
       setStatus(true);
-      if (r.v !== ver && name === cur) { ver = r.v; await run(null); }
+      if (r.v !== ver) { ver = r.v; await run(null); if (c === 'prod' || curTab === 'releases') refreshTab(); }
     } catch (e) { if (ctl.signal.aborted) return; setStatus(false, 'offline'); await new Promise(r => setTimeout(r, 1500)); }
   }
 }
 
 async function pollLogs() {
   if (cur) try {
-    const r = await api(`/api/logs/${cur}?after=${logAfter}`);
-    const box = $('#logs'), stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+    const r = await api(`/api/logs/${cur}?ch=${chan}&after=${logAfter}`);
+    const box = $('#p-logs'), stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
     r.logs.forEach(([n, t, msg]) => {
       logAfter = n; const d = document.createElement('div');
-      d.innerHTML = `<span class="t">${t}</span> <span></span>`; d.lastChild.textContent = msg;
-      d.lastChild.className = msg.startsWith('✖') ? 'e' : msg.startsWith('⚡') ? 'r' : ''; box.appendChild(d);
+      d.innerHTML = `<span class="t">${t}</span> <span class="${msg.startsWith('✖') ? 'e' : msg.startsWith('⚡') ? 'r' : ''}">${esc(msg)}</span>`; $('#logs').appendChild(d);
     });
-    while (box.childNodes.length > 400) box.removeChild(box.firstChild);
+    while ($('#logs').childNodes.length > 500) $('#logs').removeChild($('#logs').firstChild);
     if (stick) box.scrollTop = box.scrollHeight;
   } catch (e) {}
-  setTimeout(pollLogs, 800);
+  setTimeout(pollLogs, 900);
 }
+
+let curTab = 'logs';
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  curTab = b.dataset.p;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + curTab));
+  refreshTab();
+});
+const fmtTime = ts => new Date(ts * 1000).toLocaleString();
+
+async function refreshTab() {
+  try {
+    if (curTab === 'releases' && cur) {
+      const r = await api('/api/releases/' + cur);
+      $('#rellist').innerHTML = r.releases.length ? `<table><tr><th>#</th><th>note</th><th>by</th><th>when</th><th>tests</th><th></th></tr>` + r.releases.map(x =>
+        `<tr><td><b>r${x.n}</b>${x.n === r.current ? ' <span class="pill ok">live</span>' : ''}</td><td>${esc(x.note)}</td><td>${esc(x.user)}</td><td class="mute">${fmtTime(x.created)}</td>
+        <td class="${x.tests.ok ? 'ok' : 'bad'}">${x.tests.ok ? '✔ ' + (x.tests.count || 0) : '✖ forced'}</td>
+        <td>${can('admin') && x.n !== r.current ? `<button class="sm" data-dep="${x.n}">${r.current && x.n < r.current ? 'Roll back' : 'Deploy'}</button>` : ''}</td></tr>`).join('') + '</table>'
+        : '<p class="mute">No releases yet. Create one to snapshot the dev code. Production only ever runs releases.</p>';
+      document.querySelectorAll('[data-dep]').forEach(b => b.onclick = async () => {
+        if (!confirm(`Point production of ${cur} at r${b.dataset.dep}? Every installed app switches immediately.`)) return;
+        try { await api('/api/deploy/' + cur, { method: 'POST', body: JSON.stringify({ n: +b.dataset.dep }) }); refreshTab(); loadApps(); } catch (e) { alert(e.message); }
+      });
+    } else if (curTab === 'audit') {
+      const r = await api('/api/audit/' + (cur || '') + '?limit=200');
+      $('#auditlist').innerHTML = '<table><tr><th>when</th><th>user</th><th>action</th><th>app</th><th>detail</th></tr>' + r.map(x =>
+        `<tr><td class="mute">${fmtTime(x.ts)}</td><td>${esc(x.user)}</td><td>${esc(x.action)}</td><td>${esc(x.app)}</td><td>${esc(x.detail)}</td></tr>`).join('') + '</table>';
+    } else if (curTab === 'users' && can('admin')) {
+      const r = await api('/api/users');
+      $('#ulist').innerHTML = '<table><tr><th>user</th><th>role</th><th>created</th><th></th></tr>' + r.map(u =>
+        `<tr><td>${esc(u.name)}</td><td>${esc(u.role)}</td><td class="mute">${fmtTime(u.created)}</td><td><button class="sm" data-del="${esc(u.name)}">Remove</button></td></tr>`).join('') + '</table>';
+      document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (confirm('Remove ' + b.dataset.del + '?')) { try { await api('/api/users/' + b.dataset.del, { method: 'DELETE' }); refreshTab(); } catch (e) { alert(e.message); } } });
+    }
+  } catch (e) {}
+}
+
+function showTests(t) {
+  $('#testout').innerHTML = !t.results.length ? '<p class="mute">No tests found. Add JSON cases under tests/.</p>' :
+    t.results.map(x => `<div class="${x.ok ? 'ok' : 'bad'}">${x.ok ? '✔' : '✖'} ${esc(x.name)}${x.ok ? '' : `<div class="mute" style="margin-left:18px">${esc(x.error)}</div>`}</div>`).join('');
+}
+$('#runtests').onclick = async () => { $('#testout').textContent = 'running…'; try { showTests(await api('/api/test/' + cur, { method: 'POST' })); } catch (e) { $('#testout').textContent = e.message; } };
+$('#mkrel').onclick = async () => {
+  if (!cur) return;
+  try {
+    const r = await api('/api/release/' + cur, { method: 'POST', body: JSON.stringify({ note: $('#relnote').value, deploy: $('#reldeploy').checked, force: $('#relforce').checked }) });
+    $('#relnote').value = ''; toast(`Released r${r.n}${r.deployed ? ' and deployed' : ''}`); refreshTab(); loadApps();
+  } catch (e) {
+    if (e.data && e.data.tests) { document.querySelector('[data-p=tests]').click(); showTests(e.data.tests); }
+    alert(e.message);
+  }
+};
+$('#uadd').onclick = async () => {
+  try { await api('/api/users', { method: 'POST', body: JSON.stringify({ name: $('#uname').value.trim(), password: $('#upass').value, role: $('#urole').value }) }); $('#upass').value = ''; refreshTab(); boot(true); }
+  catch (e) { alert(e.message); }
+};
+$('#mktok').onclick = async () => {
+  try { const r = await api('/api/tokens', { method: 'POST', body: JSON.stringify({ label: $('#toklabel').value || 'api' }) }); $('#tokout').innerHTML = `<code class="tok">${esc(r.token)}</code> <span class="mute">copy now, it won't be shown again</span>`; }
+  catch (e) { alert(e.message); }
+};
+document.querySelectorAll('#chan button').forEach(b => b.onclick = () => {
+  chan = b.dataset.c; document.querySelectorAll('#chan button').forEach(x => x.classList.toggle('on', x === b));
+  ver = -1; logAfter = 0; $('#logs').innerHTML = ''; for (const k in inputEls) delete inputEls[k]; run(null); watch();
+});
 
 function setStatus(ok, msg) { const s = $('#status'); s.textContent = ok ? 'live' : msg || 'offline'; s.className = 'pill ' + (ok ? 'ok' : 'bad'); }
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2000); }
@@ -262,7 +395,7 @@ function build(n, parent, palign, used) {
     applyBox(el, n, parent, palign); return el;
   } else if (t === 'image') {
     el = document.createElement('img');
-    const src = n.src || ''; el.src = /^https?:/.test(src) ? src : src.startsWith('/') ? src : `/apps/${cur}/assets/${src}`;
+    const src = n.src || ''; el.src = /^https?:/.test(src) ? src : src.startsWith('/') ? src : `/apps/${cur}/assets/${src}?ch=${chan}`;
     Object.assign(el.style, { objectFit: n.fit === 'contain' ? 'contain' : 'cover', borderRadius: px(n.radius ?? 12), background: n.bg || '#e5e7eb', height: '180px', display: 'block', minWidth: 0 });
     if (parent === 'row') el.style.width = '120px';
   } else if (t === 'spacer') {
@@ -295,31 +428,36 @@ function applyBox(el, n, parent, palign) {
   el.style.boxSizing = 'border-box';
 }
 
+
 $('#create').onclick = async () => {
   const name = $('#nname').value.trim().toLowerCase();
   try { await api('/api/apps', { method: 'POST', body: JSON.stringify({ name, ext: $('#nlang').value }) }); $('#nname').value = ''; await loadApps(name); }
   catch (e) { alert(e.message); }
 };
-$('#reset').onclick = async () => { if (!cur) return; await api('/api/reset/' + cur, { method: 'POST', body: JSON.stringify({ session: sid }) }); for (const k in inputEls) delete inputEls[k]; run(null); };
-$('#del').onclick = async () => { if (cur && confirm(`Delete app "${cur}" and its files?`)) { await api('/api/apps/' + cur, { method: 'DELETE' }); cur = null; location.hash = ''; loadApps(); } };
 $('#apkbtn').onclick = () => {
   if (!cur) return;
-  const q = new URLSearchParams({ server: $('#apksrv').value.trim() }); if (token) q.set('token', token);
+  const q = new URLSearchParams({ server: $('#apksrv').value.trim(), channel: $('#apkch').value }); if (token) q.set('token', token);
   $('#hint').textContent = 'Building APK…'; location.href = `/api/apk/${cur}?${q}`;
-  setTimeout(() => $('#hint').textContent = 'Install on a phone that can reach that URL. Edits go live on it instantly.', 4000);
+  setTimeout(() => $('#hint').textContent = 'A prod APK runs only deployed releases. A dev APK follows every save.', 4000);
 };
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && backId && document.activeElement === document.body) run(ev('tap', backId)); });
 
-(async () => {
+async function boot(quiet) {
   try {
-    meta = await api('/api/meta');
+    meta = await api('/api/meta'); me = await api('/api/me');
+    $('#banner').style.display = me.open ? 'block' : 'none';
+    $('#who').textContent = me.user + ' · ' + me.role; $('#logout').style.display = me.open ? 'none' : '';
+    document.querySelectorAll('.dev-only').forEach(x => x.style.display = can('developer') ? '' : 'none');
+    document.querySelectorAll('.admin-only').forEach(x => x.style.display = can('admin') ? '' : 'none');
+    if (quiet) return;
     $('#nlang').innerHTML = Object.entries(meta.langs).map(([e, n]) => `<option value="${e}">${n}</option>`).join('');
-    const host = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? meta.ip + ':' + meta.port : location.host;
+    const host = ['localhost', '127.0.0.1'].includes(location.hostname) ? meta.ip + ':' + meta.port : location.host;
     $('#apksrv').value = location.protocol + '//' + host;
     $('#hint').textContent = 'Emulator? use http://10.0.2.2:' + meta.port;
     setStatus(true); await loadApps(); pollLogs();
   } catch (e) { setStatus(false, e.message); }
-})();
+}
+boot();
 </script>
 </body>
 </html>
