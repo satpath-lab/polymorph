@@ -1,0 +1,21 @@
+{
+  "label": "Showcase",
+  "package": "com.example.showcase",
+  "version": "1.2.0",
+  "versionCode": 12,
+  "orientation": "portrait",
+  "minSdk": 24,
+  "targetSdk": 35,
+  "pins": [],
+  "features": {
+    "encryptStorage": true,
+    "cacheScreens": true,
+    "offlineQueue": true,
+    "push": true,
+    "backgroundJobs": false,
+    "blockScreenshots": false,
+    "location": false,
+    "notifications": true,
+    "requireHttps": true
+  }
+}

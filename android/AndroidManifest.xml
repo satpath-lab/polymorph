@@ -2,20 +2,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{{PKG}}">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    {{LOCATION}}
+    {{NOTIFICATIONS}}
+    {{BOOT}}
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     {{PERMS}}
     <queries>
         <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
         <intent><action android:name="android.intent.action.GET_CONTENT" /><data android:mimeType="*/*" /></intent>
     </queries>
-    <application android:label="{{LABEL}}" android:icon="@drawable/ic_volt" android:usesCleartextTraffic="true"
-        android:theme="@android:style/Theme.Material.Light.DarkActionBar" android:hardwareAccelerated="true" android:extractNativeLibs="true">
+    <application android:label="{{LABEL}}" android:icon="@drawable/ic_volt" android:usesCleartextTraffic="{{CLEARTEXT}}"
+        android:theme="@style/VoltTheme" android:hardwareAccelerated="true" android:extractNativeLibs="true">
         <activity android:name="dev.volt.player.MainActivity" android:exported="true" android:launchMode="singleTop"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:windowSoftInputMode="adjustResize">
+            {{ORIENTATION}}android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

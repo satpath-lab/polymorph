@@ -44,12 +44,13 @@ public class VoltJob extends JobService {
     }
 
     static void run(Context c) throws Exception {
+        VoltSecure.init(c);
         SharedPreferences sp = c.getSharedPreferences("volt", Context.MODE_PRIVATE);
         String app = sp.getString("bg:app", "");
         if (app.isEmpty()) return;
         if (sp.getBoolean("bg:on", false)) {
             JSONObject ev = new JSONObject().put("type", "background").put("id", "background").put("inputs", new JSONObject())
-                    .put("store", new JSONObject(sp.getString("store:" + app, "{}")))
+                    .put("store", new JSONObject(VoltSecure.dec(sp.getString("store:" + app, null), "{}")))
                     .put("device", new JSONObject().put("platform", "android").put("background", true));
             JSONObject body = new JSONObject().put("session", sp.getString("sid", "")).put("event", ev);
             JSONObject r = http(sp, "POST", "/api/run/" + app + "?ch=" + sp.getString("bg:channel", "prod"), body.toString());
@@ -66,14 +67,14 @@ public class VoltJob extends JobService {
                 }
                 JSONObject up = fx.optJSONObject("store");
                 if (up != null) {
-                    JSONObject cur = new JSONObject(sp.getString("store:" + app, "{}"));
+                    JSONObject cur = new JSONObject(VoltSecure.dec(sp.getString("store:" + app, null), "{}"));
                     Iterator<String> it = up.keys();
                     while (it.hasNext()) { String k = it.next(); if (up.isNull(k)) cur.remove(k); else cur.put(k, up.get(k)); }
-                    sp.edit().putString("store:" + app, cur.toString()).apply();
+                    sp.edit().putString("store:" + app, VoltSecure.enc(cur.toString())).apply();
                 }
             }
         }
-        inbox(c);
+        if (VoltSecure.on("push", true)) inbox(c);
     }
 
     static void inbox(Context c) throws Exception {
@@ -92,7 +93,7 @@ public class VoltJob extends JobService {
     }
 
     static JSONObject http(SharedPreferences sp, String method, String path, String body) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(sp.getString("bg:server", "") + path).openConnection();
+        HttpURLConnection c = VoltSecure.open(sp.getString("bg:server", "") + path);
         c.setRequestMethod(method); c.setConnectTimeout(8000); c.setReadTimeout(20000);
         String tok = sp.getString("bg:token", "");
         if (!tok.isEmpty()) c.setRequestProperty("X-Volt-Token", tok);

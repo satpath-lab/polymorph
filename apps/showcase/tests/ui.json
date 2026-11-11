@@ -1,0 +1,16 @@
+[
+  {
+    "name": "controls, dialog, tabs, canvas",
+    "steps": [
+      { "event": null, "expect": { "ui.tabs.selected": "ui", "ui.dialog": null } },
+      { "event": { "type": "change", "id": "qty", "value": 5, "inputs": {} }, "expect": { "state.qty": 5 } },
+      { "event": { "type": "change", "id": "agree", "value": true, "inputs": {} }, "expect": { "state.agree": true } },
+      { "event": { "type": "tap", "id": "order", "inputs": {} }, "expect": { "ui.dialog.buttons.0.id": "confirm" } },
+      { "event": { "type": "tap", "id": "confirm", "inputs": {} }, "expect": { "ui.dialog": null, "fx.toast": "Ordered 5 × M (pro)" } },
+      { "event": { "type": "tap", "id": "pick-date", "inputs": {} }, "expect": { "fx.pickDate.id": "date" } },
+      { "event": { "type": "result", "id": "date", "value": "2026-12-24", "inputs": {} }, "expect": { "state.date": "2026-12-24" } },
+      { "event": { "type": "tap", "id": "draw", "inputs": {} }, "expect": { "ui.route": "draw" } },
+      { "event": { "type": "tap", "id": "pad", "value": { "x": 40, "y": 60 }, "inputs": {} }, "expect": { "state.dots.0": [40, 60] } }
+    ]
+  }
+]

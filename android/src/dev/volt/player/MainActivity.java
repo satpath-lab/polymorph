@@ -53,6 +53,24 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.AbsListView;
 import android.widget.BaseAdapter;
 import android.widget.ListView;
+import android.app.AlertDialog;
+import android.app.DatePickerDialog;
+import android.app.TimePickerDialog;
+import android.media.MediaPlayer;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.ArrayAdapter;
+import android.widget.CheckBox;
+import android.widget.MediaController;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
+import android.widget.SeekBar;
+import android.widget.Spinner;
+import android.widget.AdapterView;
+import android.widget.VideoView;
+import java.io.IOException;
+import java.util.Calendar;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -114,11 +132,22 @@ public class MainActivity extends Activity {
     boolean rootScroll = true;
     final Map<String, ListView> lists = new HashMap<>();
     final Set<String> usedLists = new HashSet<>();
+    final Map<String, View> keep = new HashMap<>();
+    final Map<String, String> keepSig = new HashMap<>();
+    final Set<String> usedKeep = new HashSet<>();
+    final Set<String> animated = new HashSet<>();
+    final Map<String, Typeface> fonts = new HashMap<>();
+    final Set<String> fontLoading = new HashSet<>();
+    JSONObject lastScreen;
+    AlertDialog dialog;
+    String dialogKey;
+    JSONArray outbox = new JSONArray();
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         dp = getResources().getDisplayMetrics().density;
         prefs = getSharedPreferences("volt", MODE_PRIVATE);
+        VoltSecure.init(this);
         host = new FrameLayout(this);
         host.setBackgroundColor(0xFFF4F5F7);
         setContentView(host);
@@ -142,7 +171,8 @@ public class MainActivity extends Activity {
         prefs.edit().putString("bg:server", server).putString("bg:app", app).putString("bg:channel", channel).putString("bg:token", token).apply();
         setTitle(app);
         host.removeAllViews();
-        String cached = prefs.getString("ui:" + app + ":" + channel, null);
+        try { outbox = new JSONArray(VoltSecure.dec(prefs.getString("outbox:" + app + ":" + channel, null), "[]")); } catch (Exception e) { outbox = new JSONArray(); }
+        String cached = !VoltSecure.on("cacheScreens", true) ? null : VoltSecure.dec(prefs.getString("ui:" + app + ":" + channel, null), null);
         boolean shown = false;
         if (cached != null) try { render(new JSONObject(cached)); shown = true; } catch (Exception ignored) {}
         if (!shown) {
@@ -162,9 +192,10 @@ public class MainActivity extends Activity {
             while (watching && watchApp.equals(app)) {
                 try {
                     if (ver < 0) { Thread.sleep(150); continue; }
-                    try { VoltJob.inbox(getApplicationContext()); } catch (Exception ignored) {}
+                    if (VoltSecure.on("push", true)) try { VoltJob.inbox(getApplicationContext()); } catch (Exception ignored) {}
                     JSONObject r = http("GET", "/api/watch/" + watchApp + "?ch=" + channel + "&v=" + ver, null, 35000);
                     long v = r.optLong("v", ver);
+                    if (outbox.length() > 0 && v == ver) send(null);
                     if (v != ver && watching) { ver = v; send(null); }
                 } catch (Exception e) {
                     try { Thread.sleep(1500); } catch (InterruptedException ie) { return; }
@@ -191,19 +222,34 @@ public class MainActivity extends Activity {
         final String a = app;
         net.execute(() -> {
             try {
+                while (outbox.length() > 0) {
+                    JSONObject qb = new JSONObject().put("session", session).put("event", outbox.getJSONObject(0));
+                    final JSONObject qr = http("POST", "/api/run/" + a + "?ch=" + channel, qb.toString(), 20000);
+                    outbox.remove(0); saveOutbox();
+                    if (outbox.length() == 0 && ev == null) main.post(() -> { if (a.equals(app)) apply(qr); });
+                }
                 JSONObject body = new JSONObject();
                 body.put("session", session);
                 body.put("event", ev == null ? JSONObject.NULL : ev);
                 final JSONObject r = http("POST", "/api/run/" + a + "?ch=" + channel, body.toString(), 20000);
                 main.post(() -> { if (a.equals(app)) apply(r); });
+            } catch (final IOException e) {
+                if (ev != null && hasContent && VoltSecure.on("offlineQueue", true)) {
+                    try { ev.put("queuedAt", System.currentTimeMillis()); } catch (Exception ignored) {}
+                    outbox.put(ev); saveOutbox();
+                    final int n = outbox.length();
+                    main.post(() -> Toast.makeText(this, "Offline: action saved (" + n + " waiting)", Toast.LENGTH_SHORT).show());
+                } else main.post(() -> showError(e));
             } catch (final Exception e) {
                 main.post(() -> showError(e));
             }
         });
     }
 
+    void saveOutbox() { prefs.edit().putString("outbox:" + app + ":" + channel, VoltSecure.enc(outbox.toString())).apply(); }
+
     JSONObject http(String method, String path, String body, int timeout) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(server + path).openConnection();
+        HttpURLConnection c = VoltSecure.open(server + path);
         c.setRequestMethod(method);
         c.setConnectTimeout(6000);
         c.setReadTimeout(timeout);
@@ -232,7 +278,8 @@ public class MainActivity extends Activity {
     void apply(JSONObject r) {
         ver = r.optLong("v", ver);
         JSONObject ui = r.optJSONObject("ui");
-        if (ui != null) { render(ui); prefs.edit().putString("ui:" + app + ":" + channel, ui.toString()).apply(); }
+        if (ui != null && !VoltSecure.on("cacheScreens", true)) render(ui);
+        else if (ui != null) { render(ui); prefs.edit().putString("ui:" + app + ":" + channel, VoltSecure.enc(ui.toString())).apply(); }
         JSONObject fx = r.optJSONObject("fx");
         if (fx == null) return;
         if (fx.has("toast")) Toast.makeText(this, fx.optString("toast"), Toast.LENGTH_SHORT).show();
@@ -247,6 +294,8 @@ public class MainActivity extends Activity {
 
     void render(JSONObject screen) {
         setTitle(screen.optString("title", app));
+        if (screen.optBoolean("secure") || VoltSecure.on("blockScreenshots", false)) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
         backId = screen.has("back") ? screen.optString("back") : null;
         int accent = color(screen.optString("accent", ""), 0);
         ActionBar bar = getActionBar();
@@ -258,8 +307,11 @@ public class MainActivity extends Activity {
         host.setBackgroundColor(color(screen.optString("bg", ""), 0xFFF4F5F7));
         int scrollY = 0;
         View old = host.getChildCount() > 0 ? host.getChildAt(0) : null;
+        if (old != null && "shell".equals(old.getTag())) old = ((ViewGroup) old).getChildAt(0);
         if (old instanceof ScrollView) scrollY = old.getScrollY();
-        usedInputs.clear(); usedLists.clear();
+        if (lastRoute != null && !screen.optString("route", "").equals(lastRoute)) scrollY = 0;
+        usedInputs.clear(); usedLists.clear(); usedKeep.clear();
+        lastScreen = screen;
         rootScroll = screen.optBoolean("scroll", true);
         JSONObject body = screen.optJSONObject("body");
         View content;
@@ -273,16 +325,34 @@ public class MainActivity extends Activity {
         Iterator<String> it = inputViews.keySet().iterator();
         while (it.hasNext()) { String k = it.next(); if (!usedInputs.contains(k)) { it.remove(); inputs.remove(k); lastServerVal.remove(k); } }
         lists.keySet().retainAll(usedLists);
+        for (String k : new ArrayList<>(keep.keySet())) if (!usedKeep.contains(k)) {
+            View gone = keep.remove(k); keepSig.remove(k);
+            if (gone instanceof WebView) ((WebView) gone).destroy();
+            if (gone instanceof VideoView) ((VideoView) gone).stopPlayback();
+        }
         host.removeAllViews();
         if (screen.optBoolean("scroll", true)) {
             ScrollView sv = new ScrollView(this);
             sv.setFillViewport(true);
+            sv.setDescendantFocusability(ViewGroup.FOCUS_BEFORE_DESCENDANTS);
+            sv.setFocusableInTouchMode(true);
             sv.addView(content, new ScrollView.LayoutParams(-1, -2));
             host.addView(sv, new FrameLayout.LayoutParams(-1, -1));
             final int y = scrollY;
-            if (y > 0) sv.post(() -> sv.scrollTo(0, y));
+            sv.post(() -> { sv.requestFocus(); sv.scrollTo(0, y); });
         } else host.addView(content, new FrameLayout.LayoutParams(-1, -1));
+        JSONObject tabs = screen.optJSONObject("tabs");
+        if (tabs != null) {
+            View main0 = host.getChildAt(0);
+            host.removeView(main0);
+            LinearLayout shell = new LinearLayout(this); shell.setOrientation(LinearLayout.VERTICAL); shell.setTag("shell");
+            shell.addView(main0, new LinearLayout.LayoutParams(-1, 0, 1));
+            shell.addView(tabBar(tabs), new LinearLayout.LayoutParams(-1, -2));
+            host.addView(shell, new FrameLayout.LayoutParams(-1, -1));
+        }
+        showDialog(screen.optJSONObject("dialog"));
         String route = screen.optString("route", "");
+        if (lastRoute != null && !route.equals(lastRoute)) animated.clear();
         if (lastRoute != null && !route.equals(lastRoute)) {
             View top = host.getChildAt(0);
             float w = getResources().getDisplayMetrics().widthPixels * 0.25f;
@@ -293,7 +363,74 @@ public class MainActivity extends Activity {
         hasContent = true;
     }
 
+    static void merge(JSONObject into, JSONObject from) {
+        if (from == null) return;
+        Iterator<String> it = from.keys();
+        while (it.hasNext()) { String k = it.next(); try { into.put(k, from.get(k)); } catch (Exception ignored) {} }
+    }
+
+    JSONObject styled(JSONObject n) {
+        if (lastScreen == null) return n;
+        JSONObject styles = lastScreen.optJSONObject("styles"), theme = lastScreen.optJSONObject("theme");
+        if (theme == null && (styles == null || !n.has("style"))) return n;
+        JSONObject out = new JSONObject();
+        String type = n.optString("type", "column");
+        if (theme != null) { merge(out, theme.optJSONObject("all")); merge(out, theme.optJSONObject(type)); }
+        if (styles != null && n.has("style")) {
+            Object st = n.opt("style");
+            JSONArray names = st instanceof JSONArray ? (JSONArray) st : new JSONArray().put(String.valueOf(st));
+            for (int i = 0; i < names.length(); i++) merge(out, styles.optJSONObject(names.optString(i)));
+        }
+        merge(out, n);
+        out.remove("style");
+        return out;
+    }
+
+    GradientDrawable shape(JSONObject n, int defColor, double defRadius) {
+        GradientDrawable gd = new GradientDrawable();
+        JSONArray grad = n.optJSONArray("gradient");
+        if (grad != null && grad.length() >= 2) {
+            int[] cs = new int[grad.length()];
+            for (int i = 0; i < cs.length; i++) cs[i] = color(grad.optString(i), 0);
+            gd.setColors(cs);
+            int a = ((n.optInt("angle", 90) % 360) + 360) % 360;
+            gd.setOrientation(a < 45 || a >= 315 ? GradientDrawable.Orientation.LEFT_RIGHT : a < 135 ? GradientDrawable.Orientation.TOP_BOTTOM
+                    : a < 225 ? GradientDrawable.Orientation.RIGHT_LEFT : GradientDrawable.Orientation.BOTTOM_TOP);
+        } else gd.setColor(color(n.optString("bg", ""), defColor));
+        JSONArray r = n.optJSONArray("radius");
+        if (r != null && r.length() == 4) {
+            float a = px(r.optDouble(0)), b = px(r.optDouble(1)), c = px(r.optDouble(2)), d = px(r.optDouble(3));
+            gd.setCornerRadii(new float[]{a, a, b, b, c, c, d, d});
+        } else gd.setCornerRadius(px(n.optDouble("radius", defRadius)));
+        if (n.has("border")) gd.setStroke(Math.max(1, px(n.optDouble("borderWidth", 1))), color(n.optString("border"), 0xFFD9DCE3));
+        return gd;
+    }
+
+    View stack(JSONObject n) {
+        FrameLayout fl = new FrameLayout(this);
+        JSONArray ch = n.optJSONArray("children");
+        if (ch != null) for (int i = 0; i < ch.length(); i++) {
+            JSONObject c = ch.optJSONObject(i); if (c == null) continue;
+            c = styled(c);
+            View cv = build(c, LinearLayout.VERTICAL, "start");
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dim(c.opt("width"), c.has("position") ? -2 : -1), dim(c.opt("height"), -2));
+            JSONObject pos = c.optJSONObject("position");
+            int g = 0;
+            if (pos != null) {
+                if (pos.has("top")) { g |= Gravity.TOP; lp.topMargin = px(pos.optDouble("top")); }
+                if (pos.has("bottom")) { g |= Gravity.BOTTOM; lp.bottomMargin = px(pos.optDouble("bottom")); }
+                if (pos.has("left")) { g |= Gravity.START; lp.leftMargin = px(pos.optDouble("left")); }
+                if (pos.has("right")) { g |= Gravity.END; lp.rightMargin = px(pos.optDouble("right")); }
+                if (pos.optBoolean("center")) g = Gravity.CENTER;
+            }
+            lp.gravity = g == 0 ? Gravity.TOP | Gravity.START : g;
+            fl.addView(cv, lp);
+        }
+        return fl;
+    }
+
     View build(JSONObject n, int parentOrient, String parentAlign) {
+        n = styled(n);
         String type = n.optString("type", "column");
         final String id = n.optString("id", "");
         View v;
@@ -306,18 +443,28 @@ public class MainActivity extends Activity {
                 int g = align.equals("center") ? Gravity.CENTER : align.equals("end") ? Gravity.END : Gravity.START;
                 ll.setGravity(row ? (g == Gravity.CENTER ? Gravity.CENTER : (g | Gravity.CENTER_VERTICAL)) : (g == Gravity.CENTER ? Gravity.CENTER_HORIZONTAL : g));
                 int gap = px(n.optDouble("gap", type.equals("card") ? 6 : 0));
+                String justify = n.optString("justify", "");
+                if (justify.equals("center")) ll.setGravity(ll.getGravity() | (row ? Gravity.CENTER_HORIZONTAL : Gravity.CENTER_VERTICAL));
+                if (justify.equals("end")) ll.setGravity(ll.getGravity() | (row ? Gravity.END : Gravity.BOTTOM));
+                boolean spread = justify.equals("between") || justify.equals("around") || justify.equals("evenly");
                 JSONArray ch = n.optJSONArray("children");
                 int idx = 0;
+                if (spread && !justify.equals("between")) ll.addView(new View(this), new LinearLayout.LayoutParams(row ? 0 : -1, row ? -1 : 0, justify.equals("around") ? 0.5f : 1));
                 if (ch != null) for (int i = 0; i < ch.length(); i++) {
                     JSONObject c = ch.optJSONObject(i);
                     if (c == null) continue;
+                    c = styled(c);
                     View cv = build(c, ll.getOrientation(), align);
                     LinearLayout.LayoutParams lp = params(c, ll.getOrientation(), align);
-                    if (idx++ > 0) { if (row) lp.leftMargin += gap; else lp.topMargin += gap; }
+                    if (idx++ > 0) {
+                        if (spread) ll.addView(new View(this), new LinearLayout.LayoutParams(row ? 0 : -1, row ? -1 : 0, 1));
+                        if (row) lp.leftMargin += gap; else lp.topMargin += gap;
+                    }
                     ll.addView(cv, lp);
                 }
+                if (spread && !justify.equals("between")) ll.addView(new View(this), new LinearLayout.LayoutParams(row ? 0 : -1, row ? -1 : 0, justify.equals("around") ? 0.5f : 1));
                 if (type.equals("card")) {
-                    if (!n.has("bg")) bg(ll, 0xFFFFFFFF, n.optDouble("radius", 16));
+                    if (!n.has("bg") && !n.has("gradient")) ll.setBackground(shape(n, 0xFFFFFFFF, 16));
                     if (!n.has("padding")) ll.setPadding(px(16), px(16), px(16), px(16));
                     ll.setElevation(px(n.optDouble("elevation", 2)));
                 }
@@ -352,10 +499,7 @@ public class MainActivity extends Activity {
                 bt.setStateListAnimator(null);
                 bt.setMinHeight(px(48)); bt.setMinimumHeight(px(48)); bt.setMinWidth(0); bt.setMinimumWidth(0);
                 bt.setPadding(px(14), px(10), px(14), px(10));
-                GradientDrawable gd = new GradientDrawable();
-                gd.setColor(color(n.optString("bg", ""), 0xFF6C3BFF));
-                gd.setCornerRadius(px(n.optDouble("radius", 12)));
-                bt.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33000000), gd, null));
+                bt.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33000000), shape(n, 0xFF6C3BFF, 12), null));
                 bt.setEnabled(n.optBoolean("enabled", true));
                 bt.setOnClickListener(x -> send(event("tap", id, null)));
                 common(bt, n, null);
@@ -399,10 +543,8 @@ public class MainActivity extends Activity {
                     }
                 }
                 if (fresh && !id.isEmpty()) inputs.put(id, et.getText().toString());
-                GradientDrawable gd = new GradientDrawable();
-                gd.setColor(color(n.optString("bg", ""), 0xFFFFFFFF));
-                gd.setCornerRadius(px(n.optDouble("radius", 12)));
-                gd.setStroke(px(1), color(n.optString("border", ""), 0xFFD9DCE3));
+                GradientDrawable gd = shape(n, 0xFFFFFFFF, 12);
+                if (!n.has("border")) gd.setStroke(px(1), 0xFFD9DCE3);
                 et.setBackground(gd);
                 et.setPadding(px(14), px(12), px(14), px(12));
                 common(et, n, null);
@@ -430,7 +572,7 @@ public class MainActivity extends Activity {
                 if (cached != null) iv.setImageBitmap(cached);
                 else if (!src.isEmpty()) imgPool.execute(() -> {
                     try {
-                        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                        HttpURLConnection c = VoltSecure.open(url);
                         c.setConnectTimeout(6000); c.setReadTimeout(15000);
                         final Bitmap bm = BitmapFactory.decodeStream(c.getInputStream());
                         if (bm != null) { images.put(url, bm); main.post(() -> iv.setImageBitmap(bm)); }
@@ -468,6 +610,157 @@ public class MainActivity extends Activity {
                 ad.notifyDataSetChanged();
                 v = lv; break;
             }
+            case "select": {
+                final Spinner sp = new Spinner(this);
+                final JSONArray opts = n.optJSONArray("options") == null ? new JSONArray() : n.optJSONArray("options");
+                final List<String> labels = new ArrayList<>(), values = new ArrayList<>();
+                for (int i = 0; i < opts.length(); i++) {
+                    JSONObject o = opts.optJSONObject(i);
+                    values.add(o != null ? o.optString("value") : opts.optString(i));
+                    labels.add(o != null ? o.optString("label", o.optString("value")) : opts.optString(i));
+                }
+                sp.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, labels));
+                final String cur = n.optString("value", "");
+                int sel = values.indexOf(cur); if (sel >= 0) sp.setSelection(sel, false);
+                sp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                    public void onItemSelected(AdapterView<?> a, View vv, int pos, long l) { if (!values.get(pos).equals(cur)) send(event("change", id, values.get(pos))); }
+                    public void onNothingSelected(AdapterView<?> a) {}
+                });
+                GradientDrawable gd = new GradientDrawable(); gd.setColor(0xFFFFFFFF); gd.setCornerRadius(px(12)); gd.setStroke(px(1), 0xFFD9DCE3);
+                sp.setBackground(gd); sp.setPadding(px(8), px(10), px(8), px(10));
+                v = sp; break;
+            }
+            case "slider": {
+                final double min = n.optDouble("min", 0), max = n.optDouble("max", 100), step = Math.max(1e-9, n.optDouble("step", 1));
+                SeekBar sb = new SeekBar(this);
+                sb.setMax((int) Math.round((max - min) / step));
+                sb.setProgress((int) Math.round((n.optDouble("value", min) - min) / step));
+                if (n.has("color")) { int c0 = color(n.optString("color"), 0xFF6C3BFF); sb.setProgressTintList(ColorStateList.valueOf(c0)); sb.setThumbTintList(ColorStateList.valueOf(c0)); }
+                sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                    public void onProgressChanged(SeekBar b, int pr, boolean user) {}
+                    public void onStartTrackingTouch(SeekBar b) {}
+                    public void onStopTrackingTouch(SeekBar b) {
+                        double val = min + b.getProgress() * step;
+                        send(event("change", id, val == Math.rint(val) ? (Object) (long) val : (Object) val));
+                    }
+                });
+                sb.setPadding(px(12), px(12), px(12), px(12));
+                v = sb; break;
+            }
+            case "checkbox": {
+                CheckBox cb = new CheckBox(this);
+                cb.setText(n.optString("text", "")); cb.setTextSize(TypedValue.COMPLEX_UNIT_SP, (float) n.optDouble("size", 16));
+                cb.setTextColor(color(n.optString("color", ""), 0xFF1F2328));
+                cb.setChecked(n.optBoolean("value"));
+                cb.setOnCheckedChangeListener((b, on) -> send(event("change", id, on)));
+                v = cb; break;
+            }
+            case "radio": {
+                RadioGroup rg = new RadioGroup(this);
+                rg.setOrientation(n.optBoolean("horizontal") ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+                JSONArray opts = n.optJSONArray("options") == null ? new JSONArray() : n.optJSONArray("options");
+                final List<String> values = new ArrayList<>();
+                String cur = n.optString("value", "");
+                for (int i = 0; i < opts.length(); i++) {
+                    JSONObject o = opts.optJSONObject(i);
+                    String val = o != null ? o.optString("value") : opts.optString(i);
+                    RadioButton rb = new RadioButton(this);
+                    rb.setId(1000 + i); rb.setText(o != null ? o.optString("label", val) : val);
+                    rb.setTextColor(color(n.optString("color", ""), 0xFF1F2328)); rb.setTextSize(TypedValue.COMPLEX_UNIT_SP, (float) n.optDouble("size", 16));
+                    rg.addView(rb); values.add(val);
+                    if (val.equals(cur)) rb.setChecked(true);
+                }
+                rg.setOnCheckedChangeListener((g, cid) -> { int i = cid - 1000; if (i >= 0 && i < values.size()) send(event("change", id, values.get(i))); });
+                v = rg; break;
+            }
+            case "grid": {
+                int cols = Math.max(1, n.optInt("columns", 2));
+                double gap = n.optDouble("gap", 8);
+                JSONArray ch = n.optJSONArray("children") == null ? new JSONArray() : n.optJSONArray("children");
+                JSONArray rows = new JSONArray();
+                try {
+                    for (int i = 0; i < ch.length(); i += cols) {
+                        JSONArray cells = new JSONArray();
+                        for (int j = i; j < i + cols; j++) {
+                            JSONObject cell = j < ch.length() ? new JSONObject(ch.optJSONObject(j) == null ? "{}" : ch.optJSONObject(j).toString()) : new JSONObject().put("type", "spacer");
+                            cell.put("flex", 1);
+                            cells.put(cell);
+                        }
+                        rows.put(new JSONObject().put("type", "row").put("gap", gap).put("align", "start").put("children", cells));
+                    }
+                    v = build(new JSONObject().put("type", "column").put("gap", gap).put("children", rows), parentOrient, parentAlign);
+                } catch (Exception e) { v = new View(this); }
+                break;
+            }
+            case "chart": {
+                ChartView cv = new ChartView(this); cv.set(n); v = cv; break;
+            }
+            case "canvas": {
+                CanvasView cv = new CanvasView(this); cv.set(n.optJSONArray("ops"));
+                if (!id.isEmpty()) cv.onTap = (x, y) -> { try { send(event("tap", id, new JSONObject().put("x", x).put("y", y))); } catch (Exception ignored) {} };
+                common(cv, n, null);
+                return cv;
+            }
+            case "web": {
+                String sig = n.optString("url") + "|" + n.optString("html");
+                String key = "web:" + (id.isEmpty() ? sig.hashCode() : id);
+                WebView wv = (WebView) keep.get(key);
+                if (wv == null) {
+                    wv = new WebView(this);
+                    WebSettings ws = wv.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setMediaPlaybackRequiresUserGesture(false);
+                    wv.setWebViewClient(new WebViewClient());
+                    keep.put(key, wv);
+                } else if (wv.getParent() != null) ((ViewGroup) wv.getParent()).removeView(wv);
+                usedKeep.add(key);
+                if (!sig.equals(keepSig.get(key))) {
+                    keepSig.put(key, sig);
+                    if (n.has("html")) wv.loadDataWithBaseURL(server + "/", n.optString("html"), "text/html", "utf-8", null);
+                    else { String u = n.optString("url"); wv.loadUrl(u.startsWith("http") ? u : server + (u.startsWith("/") ? "" : "/apps/" + app + "/assets/") + u); }
+                }
+                v = wv; break;
+            }
+            case "video": {
+                String src = n.optString("src", "");
+                final String url = src.startsWith("http") ? src : server + (src.startsWith("/") ? "" : "/apps/" + app + "/assets/") + src;
+                String key = "video:" + (id.isEmpty() ? url.hashCode() : id);
+                VideoView vv = (VideoView) keep.get(key);
+                if (vv == null) {
+                    vv = new VideoView(this);
+                    final VideoView fvv = vv;
+                    if (n.optBoolean("controls", true)) { MediaController mc = new MediaController(this); mc.setAnchorView(vv); vv.setMediaController(mc); }
+                    final boolean loop = n.optBoolean("loop"), auto = n.optBoolean("autoplay"), muted = n.optBoolean("muted");
+                    final String vid = id;
+                    vv.setOnErrorListener((mp, what, extra) -> {
+                        TextView msg = new TextView(this); msg.setText("Video unavailable"); msg.setTextColor(0xFFFFFFFF); msg.setGravity(Gravity.CENTER);
+                        if (fvv.getParent() instanceof ViewGroup) { fvv.setBackgroundColor(0xFF111111); }
+                        Toast.makeText(this, "Video unavailable", Toast.LENGTH_SHORT).show();
+                        if (!vid.isEmpty()) send(event("error", vid, what));
+                        return true;
+                    });
+                    vv.setOnPreparedListener(mp -> { mp.setLooping(loop); if (muted) mp.setVolume(0, 0); if (auto) fvv.start(); else fvv.seekTo(1); });
+                    keep.put(key, vv);
+                } else if (vv.getParent() != null) ((ViewGroup) vv.getParent()).removeView(vv);
+                usedKeep.add(key);
+                if (!url.equals(keepSig.get(key))) { keepSig.put(key, url); vv.setVideoURI(Uri.parse(url)); }
+                v = vv; break;
+            }
+            case "native": {
+                String key = "native:" + (id.isEmpty() ? n.optString("plugin") : id);
+                JSONObject props = n.optJSONObject("props") == null ? new JSONObject() : n.optJSONObject("props");
+                View nv = keep.get(key);
+                try {
+                    VoltViewPlugin vp = (VoltViewPlugin) pluginAny(n.optString("plugin"));
+                    if (nv == null) { nv = vp.create(pluginHost, props); keep.put(key, nv); }
+                    else { if (nv.getParent() != null) ((ViewGroup) nv.getParent()).removeView(nv); vp.update(nv, props); }
+                    usedKeep.add(key);
+                    v = nv;
+                } catch (Throwable t) {
+                    TextView tv = new TextView(this); tv.setText("[native view " + n.optString("plugin") + ": " + t.getMessage() + "]"); tv.setTextColor(0xFFB91C1C);
+                    v = tv;
+                }
+                break;
+            }
+            case "stack": v = stack(n); break;
             case "spacer": v = new View(this); break;
             case "divider": { v = new View(this); v.setBackgroundColor(color(n.optString("color", ""), 0x1F000000)); break; }
             case "progress": {
@@ -497,9 +790,52 @@ public class MainActivity extends Activity {
             else { int p = px(n.optDouble("padding", 0)); v.setPadding(p, p, p, p); }
         }
         String t = n.optString("type");
-        if (!t.equals("button") && !t.equals("input") && !t.equals("image") && (n.has("bg") || n.has("radius")))
-            bg(v, color(n.optString("bg", ""), 0), n.optDouble("radius", t.equals("card") ? 16 : 0));
+        if (!t.equals("button") && !t.equals("input") && !t.equals("image") && (n.has("bg") || n.has("radius") || n.has("gradient") || n.has("border")))
+            v.setBackground(shape(n, 0, t.equals("card") ? 16 : 0));
+        if (n.has("paddingTop") || n.has("paddingBottom") || n.has("paddingLeft") || n.has("paddingRight") || n.has("paddingH") || n.has("paddingV")) {
+            int l = v.getPaddingLeft(), tp = v.getPaddingTop(), r = v.getPaddingRight(), b = v.getPaddingBottom();
+            if (n.has("paddingH")) l = r = px(n.optDouble("paddingH"));
+            if (n.has("paddingV")) tp = b = px(n.optDouble("paddingV"));
+            if (n.has("paddingLeft")) l = px(n.optDouble("paddingLeft"));
+            if (n.has("paddingRight")) r = px(n.optDouble("paddingRight"));
+            if (n.has("paddingTop")) tp = px(n.optDouble("paddingTop"));
+            if (n.has("paddingBottom")) b = px(n.optDouble("paddingBottom"));
+            v.setPadding(l, tp, r, b);
+        }
+        if (n.has("minWidth")) v.setMinimumWidth(px(n.optDouble("minWidth")));
+        if (n.has("minHeight")) v.setMinimumHeight(px(n.optDouble("minHeight")));
+        if (v instanceof TextView) {
+            TextView tv = (TextView) v;
+            if (n.has("maxWidth")) tv.setMaxWidth(px(n.optDouble("maxWidth")));
+            if (n.has("letterSpacing")) tv.setLetterSpacing((float) n.optDouble("letterSpacing"));
+            if (n.has("lineHeight")) tv.setLineSpacing(0, (float) n.optDouble("lineHeight"));
+            if (n.optBoolean("underline")) tv.setPaintFlags(tv.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+            if (n.optBoolean("strike")) tv.setPaintFlags(tv.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+            if (n.optBoolean("uppercase")) tv.setAllCaps(true);
+            if (n.has("weight") && Build.VERSION.SDK_INT >= 28 && !n.has("font"))
+                tv.setTypeface(Typeface.create(n.optBoolean("mono") ? Typeface.MONOSPACE : Typeface.DEFAULT, Math.max(1, Math.min(1000, n.optInt("weight", 400))), n.optBoolean("italic")));
+            if (n.has("textShadow")) tv.setShadowLayer(px(2), 0, px(1), color(n.optString("textShadow"), 0x55000000));
+        }
         if (n.has("opacity")) v.setAlpha((float) n.optDouble("opacity", 1));
+        if (n.has("rotate")) v.setRotation((float) n.optDouble("rotate", 0));
+        if (n.has("scale")) { v.setScaleX((float) n.optDouble("scale", 1)); v.setScaleY((float) n.optDouble("scale", 1)); }
+        if (n.has("elevation") && !t.equals("card")) v.setElevation(px(n.optDouble("elevation", 0)));
+        if (n.has("border") && v.getBackground() instanceof GradientDrawable) ((GradientDrawable) v.getBackground()).setStroke(px(n.optDouble("borderWidth", 1)), color(n.optString("border"), 0xFFD9DCE3));
+        if (n.has("font") && v instanceof TextView) applyFont((TextView) v, n.optString("font"), n.optBoolean("bold"));
+        JSONObject an = n.optJSONObject("animate");
+        String akey = n.optString("id", n.optString("key", ""));
+        if (an != null && !akey.isEmpty() && animated.add(akey)) {
+            JSONObject from = an.optJSONObject("from") == null ? an : an.optJSONObject("from");
+            final float a1 = v.getAlpha(), s1 = v.getScaleX(), r1 = v.getRotation();
+            if (from.has("alpha")) v.setAlpha((float) from.optDouble("alpha"));
+            if (from.has("scale")) { v.setScaleX((float) from.optDouble("scale")); v.setScaleY((float) from.optDouble("scale")); }
+            if (from.has("rotate")) v.setRotation((float) from.optDouble("rotate"));
+            if (from.has("x")) v.setTranslationX(px(from.optDouble("x")));
+            if (from.has("y")) v.setTranslationY(px(from.optDouble("y")));
+            v.animate().alpha(a1).scaleX(s1).scaleY(s1).rotation(r1).translationX(0).translationY(0)
+                    .setStartDelay(an.optLong("delay", 0)).setDuration(an.optLong("duration", 300))
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        }
         if (n.has("visible") && !n.optBoolean("visible", true)) v.setVisibility(View.GONE);
         if (tapId != null && !tapId.isEmpty() && !(v instanceof android.widget.AdapterView)) {
             final String id = tapId;
@@ -516,12 +852,23 @@ public class MainActivity extends Activity {
         int w = col ? def : -2, h = -2;
         if (t.equals("divider")) { if (col) { w = -1; h = Math.max(1, px(1)); } else { w = Math.max(1, px(1)); h = -1; } }
         if (t.equals("image")) { h = px(180); if (!col) w = px(120); }
+        if (t.equals("chart") || t.equals("canvas") || t.equals("web") || t.equals("video")) h = px(t.equals("chart") ? 200 : t.equals("video") ? 200 : 240);
         if (t.equals("spacer")) { int s = px(n.optDouble("size", 0)); if (col) h = s; else w = s; }
         boolean autoFlex = t.equals("list") && !rootScroll && col && !n.has("height") && !n.has("flex");
         w = dim(n.opt("width"), w); h = dim(n.opt("height"), h);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
         if (n.has("flex") || autoFlex) { lp.weight = (float) n.optDouble("flex", 1); if (col) lp.height = 0; else lp.width = 0; }
-        if (n.has("margin")) { int m = px(n.optDouble("margin", 0)); lp.setMargins(m, m, m, m); }
+        if (n.has("margin")) {
+            JSONArray ma = n.optJSONArray("margin");
+            if (ma != null && ma.length() == 4) lp.setMargins(px(ma.optDouble(3)), px(ma.optDouble(0)), px(ma.optDouble(1)), px(ma.optDouble(2)));
+            else if (ma != null && ma.length() == 2) lp.setMargins(px(ma.optDouble(1)), px(ma.optDouble(0)), px(ma.optDouble(1)), px(ma.optDouble(0)));
+            else { int m = px(n.optDouble("margin", 0)); lp.setMargins(m, m, m, m); }
+        }
+        if (n.has("marginTop")) lp.topMargin = px(n.optDouble("marginTop"));
+        if (n.has("marginBottom")) lp.bottomMargin = px(n.optDouble("marginBottom"));
+        if (n.has("marginLeft")) lp.leftMargin = px(n.optDouble("marginLeft"));
+        if (n.has("marginRight")) lp.rightMargin = px(n.optDouble("marginRight"));
+        if (n.has("alignSelf")) { String as = n.optString("alignSelf"); lp.gravity = as.equals("center") ? (col ? Gravity.CENTER_HORIZONTAL : Gravity.CENTER_VERTICAL) : as.equals("end") ? (col ? Gravity.END : Gravity.BOTTOM) : (col ? Gravity.START : Gravity.TOP); }
         if (!col) lp.gravity = Gravity.CENTER_VERTICAL;
         return lp;
     }
@@ -676,6 +1023,28 @@ public class MainActivity extends Activity {
                 pendContact = fx.optString("contact");
                 startActivityForResult(new Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI), RC_CONTACT);
             }
+            if (fx.has("pickDate")) {
+                JSONObject o = fx.opt("pickDate") instanceof JSONObject ? fx.optJSONObject("pickDate") : new JSONObject().put("id", fx.optString("pickDate"));
+                final String pid = o.optString("id", "date");
+                Calendar cal = Calendar.getInstance();
+                String[] pv = o.optString("value", "").split("-");
+                int y = cal.get(Calendar.YEAR), mo = cal.get(Calendar.MONTH), d = cal.get(Calendar.DAY_OF_MONTH);
+                if (pv.length == 3) try { y = Integer.parseInt(pv[0]); mo = Integer.parseInt(pv[1]) - 1; d = Integer.parseInt(pv[2]); } catch (Exception ignored) {}
+                DatePickerDialog dp0 = new DatePickerDialog(this, (dv, yy, mm, dd) -> result(pid, String.format(Locale.US, "%04d-%02d-%02d", yy, mm + 1, dd)), y, mo, d);
+                dp0.setOnCancelListener(x -> result(pid, err("cancelled")));
+                dp0.show();
+            }
+            if (fx.has("pickTime")) {
+                JSONObject o = fx.opt("pickTime") instanceof JSONObject ? fx.optJSONObject("pickTime") : new JSONObject().put("id", fx.optString("pickTime"));
+                final String pid = o.optString("id", "time");
+                Calendar cal = Calendar.getInstance();
+                String[] pv = o.optString("value", "").split(":");
+                int hh = cal.get(Calendar.HOUR_OF_DAY), mi = cal.get(Calendar.MINUTE);
+                if (pv.length == 2) try { hh = Integer.parseInt(pv[0]); mi = Integer.parseInt(pv[1]); } catch (Exception ignored) {}
+                TimePickerDialog tp = new TimePickerDialog(this, (tv, h2, m2) -> result(pid, String.format(Locale.US, "%02d:%02d", h2, m2)), hh, mi, true);
+                tp.setOnCancelListener(x -> result(pid, err("cancelled")));
+                tp.show();
+            }
             if (fx.has("native")) {
                 Object nv = fx.opt("native");
                 JSONArray arr = nv instanceof JSONArray ? (JSONArray) nv : new JSONArray().put(nv);
@@ -683,7 +1052,8 @@ public class MainActivity extends Activity {
             }
             if (fx.has("background")) {
                 JSONObject bg = fx.optJSONObject("background");
-                if (bg != null && bg.optBoolean("on", true)) { prefs.edit().putBoolean("bg:on", true).apply(); VoltJob.schedule(this, bg.optInt("every", 15)); }
+                if (!VoltSecure.on("backgroundJobs", true)) Toast.makeText(this, "Background jobs are disabled for this app", Toast.LENGTH_SHORT).show();
+                else if (bg != null && bg.optBoolean("on", true)) { prefs.edit().putBoolean("bg:on", true).apply(); VoltJob.schedule(this, bg.optInt("every", 15)); }
                 else { prefs.edit().putBoolean("bg:on", false).apply(); VoltJob.cancel(this); }
             }
             if (fx.has("store")) {
@@ -691,7 +1061,7 @@ public class MainActivity extends Activity {
                 if (up != null) {
                     Iterator<String> it = up.keys();
                     while (it.hasNext()) { String k = it.next(); if (up.isNull(k)) cur.remove(k); else cur.put(k, up.get(k)); }
-                    prefs.edit().putString("store:" + app, cur.toString()).apply();
+                    prefs.edit().putString("store:" + app, VoltSecure.enc(cur.toString())).apply();
                 }
             }
         } catch (Exception e) {
@@ -700,7 +1070,7 @@ public class MainActivity extends Activity {
     }
 
     JSONObject store() {
-        try { return new JSONObject(prefs.getString("store:" + app, "{}")); } catch (Exception e) { return new JSONObject(); }
+        try { return new JSONObject(VoltSecure.dec(prefs.getString("store:" + app, null), "{}")); } catch (Exception e) { return new JSONObject(); }
     }
 
     JSONObject device() {
@@ -814,7 +1184,7 @@ public class MainActivity extends Activity {
     }
 
     void upload(String id, byte[] bytes, String type, String name) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(server + "/api/upload/" + app + "?ch=" + channel + "&name=" + Uri.encode(name)).openConnection();
+        HttpURLConnection c = VoltSecure.open(server + "/api/upload/" + app + "?ch=" + channel + "&name=" + Uri.encode(name));
         c.setRequestMethod("POST"); c.setConnectTimeout(8000); c.setReadTimeout(60000); c.setDoOutput(true);
         c.setRequestProperty("Content-Type", type);
         if (!token.isEmpty()) c.setRequestProperty("X-Volt-Token", token);
@@ -934,13 +1304,7 @@ public class MainActivity extends Activity {
     };
 
     VoltPlugin plugin(String name) throws Exception {
-        if (pluginClasses == null) {
-            pluginClasses = new HashMap<>();
-            try {
-                JSONArray arr = new JSONArray(readAll(getAssets().open("plugins.json")));
-                for (int i = 0; i < arr.length(); i++) pluginClasses.put(arr.getJSONObject(i).getString("name"), arr.getJSONObject(i).getString("class"));
-            } catch (Exception ignored) {}
-        }
+        loadPluginMap();
         VoltPlugin p = plugins.get(name);
         if (p != null) return p;
         String cls = pluginClasses.get(name);
@@ -962,4 +1326,92 @@ public class MainActivity extends Activity {
             plugin(req.optString("plugin")).call(pluginHost, req.optString("method"), args == null ? new JSONObject() : args, res);
         } catch (Throwable t) { res.error(t.getClass().getSimpleName() + ": " + t.getMessage()); }
     }
+
+    // ---------------------------------------------------------------- tabs, dialogs, fonts
+    View tabBar(JSONObject tabs) {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setBackgroundColor(color(tabs.optString("bg", ""), 0xFFFFFFFF));
+        bar.setElevation(px(8));
+        bar.setPadding(0, px(6), 0, px(6));
+        String selected = tabs.optString("selected", "");
+        int accent = color(tabs.optString("color", lastScreen == null ? "" : lastScreen.optString("accent", "")), 0xFF6C3BFF);
+        JSONArray items = tabs.optJSONArray("items") == null ? new JSONArray() : tabs.optJSONArray("items");
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject it = items.optJSONObject(i); if (it == null) continue;
+            final String tid = it.optString("id");
+            boolean on = tid.equals(selected);
+            LinearLayout cell = new LinearLayout(this); cell.setOrientation(LinearLayout.VERTICAL); cell.setGravity(Gravity.CENTER);
+            TextView ic = new TextView(this); ic.setText(it.optString("icon", "•")); ic.setTextSize(20); ic.setGravity(Gravity.CENTER);
+            ic.setAlpha(on ? 1f : 0.55f);
+            TextView lb = new TextView(this); lb.setText(it.optString("label", tid)); lb.setTextSize(12); lb.setGravity(Gravity.CENTER);
+            lb.setTextColor(on ? accent : 0xFF6B7280); if (on) lb.setTypeface(Typeface.DEFAULT_BOLD);
+            cell.addView(ic); cell.addView(lb);
+            cell.setClickable(true);
+            cell.setForeground(new RippleDrawable(ColorStateList.valueOf(0x22000000), null, null));
+            cell.setOnClickListener(x -> send(event("tap", tid, null)));
+            bar.addView(cell, new LinearLayout.LayoutParams(0, -2, 1));
+        }
+        return bar;
+    }
+
+    void showDialog(JSONObject d) {
+        String key = d == null ? null : d.toString();
+        if (key != null && key.equals(dialogKey) && dialog != null && dialog.isShowing()) return;
+        if (dialog != null) { dialog.setOnDismissListener(null); dialog.dismiss(); dialog = null; }
+        dialogKey = key;
+        if (d == null) return;
+        AlertDialog.Builder b = new AlertDialog.Builder(this);
+        if (d.has("title")) b.setTitle(d.optString("title"));
+        if (d.has("text")) b.setMessage(d.optString("text"));
+        JSONArray bt = d.optJSONArray("buttons") == null ? new JSONArray() : d.optJSONArray("buttons");
+        if (bt.length() > 0) { final String id0 = bt.optJSONObject(0).optString("id"); b.setPositiveButton(bt.optJSONObject(0).optString("text", "OK"), (x, w) -> send(event("tap", id0, null))); }
+        if (bt.length() > 1) { final String id1 = bt.optJSONObject(1).optString("id"); b.setNegativeButton(bt.optJSONObject(1).optString("text", "Cancel"), (x, w) -> send(event("tap", id1, null))); }
+        if (bt.length() > 2) { final String id2 = bt.optJSONObject(2).optString("id"); b.setNeutralButton(bt.optJSONObject(2).optString("text"), (x, w) -> send(event("tap", id2, null))); }
+        final String cancelId = d.optString("cancel", "");
+        b.setCancelable(!cancelId.isEmpty());
+        dialog = b.create();
+        if (!cancelId.isEmpty()) dialog.setOnCancelListener(x -> send(event("tap", cancelId, null)));
+        dialog.show();
+    }
+
+    void applyFont(final TextView tv, final String name, boolean bold) {
+        Typeface tf = fonts.get(name);
+        if (tf != null) { tv.setTypeface(tf, bold ? Typeface.BOLD : Typeface.NORMAL); return; }
+        if (!fontLoading.add(name)) return;
+        imgPool.execute(() -> {
+            try {
+                File f = new File(getCacheDir(), "font-" + name.replaceAll("[^A-Za-z0-9_-]", "_") + ".ttf");
+                if (!f.exists() || f.length() == 0) {
+                    String file = name.contains(".") ? name : name + ".ttf";
+                    HttpURLConnection c = VoltSecure.open(server + "/apps/" + app + "/assets/fonts/" + file + "?ch=" + channel);
+                    byte[] data = readBytes(c.getInputStream());
+                    java.io.FileOutputStream fo = new java.io.FileOutputStream(f); fo.write(data); fo.close();
+                }
+                final Typeface loaded = Typeface.createFromFile(f);
+                main.post(() -> { fonts.put(name, loaded); if (lastScreen != null) render(lastScreen); });
+            } catch (Exception e) { fontLoading.remove(name); }
+        });
+    }
+
+    void loadPluginMap() {
+        if (pluginClasses != null) return;
+        pluginClasses = new HashMap<>();
+        try {
+            JSONArray arr = new JSONArray(readAll(getAssets().open("plugins.json")));
+            for (int i = 0; i < arr.length(); i++) pluginClasses.put(arr.getJSONObject(i).getString("name"), arr.getJSONObject(i).getString("class"));
+        } catch (Exception ignored) {}
+    }
+
+    Object pluginAny(String name) throws Exception {
+        loadPluginMap();
+        Object o = viewPlugins.get(name);
+        if (o != null) return o;
+        String cls = pluginClasses.get(name);
+        if (cls == null) throw new Exception("plugin '" + name + "' is not in this APK");
+        o = Class.forName(cls).getDeclaredConstructor().newInstance();
+        viewPlugins.put(name, o);
+        return o;
+    }
+    final Map<String, Object> viewPlugins = new HashMap<>();
 }

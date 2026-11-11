@@ -11,7 +11,8 @@ RELEASES = os.path.join(DATA, "releases")
 RT, WEB, TPL, ANDROID = (os.path.join(ROOT, d) for d in ("runtimes", "web", "templates", "android"))
 BUILD = os.path.join(DATA, "build")
 LANGS = {".lua": (["lua"], "Lua"), ".py": ([sys.executable, "-u"], "Python"), ".php": (["php"], "PHP"), ".js": (["node"], "JavaScript"), ".rb": (["ruby"], "Ruby")}
-EFFECTS = ("_toast", "_open", "_vibrate", "_camera", "_pick", "_location", "_notify", "_share", "_clipboard", "_contact", "_store", "_native", "_background")
+EFFECTS_EXTRA = ("_pickDate", "_pickTime")
+EFFECTS = EFFECTS_EXTRA + ("_toast", "_open", "_vibrate", "_camera", "_pick", "_location", "_notify", "_share", "_clipboard", "_contact", "_store", "_native", "_background")
 UPLOAD_DAYS = float(os.environ.get("VOLT_UPLOAD_DAYS", "30"))
 ABIS = [a for a in os.environ.get("VOLT_ABIS", "arm64-v8a,x86_64").split(",") if a]
 UPLOADS = os.path.join(DATA, "uploads")
@@ -127,10 +128,34 @@ def worker_env(channel):
     return keep
 
 
+SANDBOX = os.environ.get("VOLT_SANDBOX", "")
+SANDBOX_NET = os.environ.get("VOLT_SANDBOX_NET", "1") == "1"
+
+
+def sandboxed(cmd, app_d):
+    if not SANDBOX: return cmd
+    if sys.platform == "darwin" and shutil.which("sandbox-exec"):
+        esc = lambda p: os.path.realpath(p).replace("\\", "\\\\").replace('"', '\\"')
+        prof = ['(version 1)', '(allow default)', '(deny file-write*)',
+                '(allow file-write* (subpath "/private/tmp") (subpath "/private/var/folders") (literal "/dev/null"))',
+                '(deny file-read* (subpath "%s"))' % esc(DATA), '(deny file-read* (subpath "%s"))' % esc(APPS),
+                '(allow file-read* (subpath "%s"))' % esc(app_d)]
+        for k in ("HOME",):
+            if os.environ.get(k): prof.append('(deny file-read* (subpath "%s/.ssh"))' % esc(os.environ[k]))
+        if not SANDBOX_NET: prof.append("(deny network*)")
+        return ["sandbox-exec", "-p", "\n".join(prof)] + cmd
+    if shutil.which("bwrap"):
+        b = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", DATA, "--tmpfs", APPS,
+             "--ro-bind", app_d, app_d, "--ro-bind", RT, RT, "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc"]
+        if not SANDBOX_NET: b.append("--unshare-net")
+        return b + cmd
+    raise RuntimeError("VOLT_SANDBOX is set but neither sandbox-exec (macOS) nor bwrap (Linux) is available")
+
+
 class Worker:
     def __init__(self, rt, gen=0):
         self.rt, self.gen = rt, gen
-        cmd = LANGS[rt.ext][0] + [os.path.join(RT, "harness" + rt.ext), rt.main]
+        cmd = sandboxed(LANGS[rt.ext][0] + [os.path.join(RT, "harness" + rt.ext), rt.main], rt.dir)
         self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=rt.dir, env=worker_env(rt.channel))
         threading.Thread(target=self._pump, daemon=True).start()
 
@@ -491,7 +516,7 @@ def find_plugins(files):
     for f in files:
         src = open(f, encoding="utf-8").read()
         pkg = re.search(r"^\s*package\s+([\w.]+)", src, re.M)
-        for cls in re.findall(r"class\s+(\w+)[^{]*?\bVoltPlugin\b", src):
+        for cls in re.findall(r"class\s+(\w+)[^{]*?\bVolt(?:View)?Plugin\b", src):
             out.append({"name": cls, "class": (pkg.group(1) + "." if pkg else "") + cls})
     return out
 
@@ -563,24 +588,105 @@ def xml_escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "\\'")
 
 
-def build_apk(app, server, label=None, out=None, channel="prod"):
+DEFAULT_FEATURES = {"encryptStorage": True, "cacheScreens": True, "offlineQueue": True, "push": True, "backgroundJobs": True,
+                    "blockScreenshots": False, "location": True, "notifications": True, "requireHttps": True}
+
+
+def app_config(app):
+    cfg = {}
+    f = os.path.join(app_dir(app), "app.json") if app else None
+    if f and os.path.exists(f):
+        try: cfg = json.load(open(f, encoding="utf-8"))
+        except ValueError as e: raise RuntimeError("app.json is not valid JSON: %s" % e)
+    feats = dict(DEFAULT_FEATURES); feats.update(cfg.get("features") or {})
+    cfg["features"] = feats
+    return cfg
+
+
+def cert_pins(url):
+    import ssl
+    u = urlparse(url)
+    ctx = ssl.create_default_context()
+    with socket.create_connection((u.hostname, u.port or 443), timeout=10) as sock, ctx.wrap_socket(sock, server_hostname=u.hostname) as tls:
+        chain = tls.get_verified_chain() if hasattr(tls, "get_verified_chain") else [tls.getpeercert(True)]
+        out = []
+        for c in chain:
+            der = c if isinstance(c, bytes) else c.public_bytes(ssl._ssl.ENCODING_DER) if hasattr(c, "public_bytes") else bytes(c)
+            import base64
+            out.append("sha256/" + base64.b64encode(hashlib.sha256(der).digest()).decode())
+        return out
+
+
+def build_aab(sdk, tmp, linked_args_apk, nat, out):
+    bt = os.environ.get("VOLT_BUNDLETOOL") or os.path.join(DATA, "tools", "bundletool.jar")
+    if not os.path.exists(bt):
+        raise RuntimeError("AAB builds need bundletool: download bundletool-all-<version>.jar from github.com/google/bundletool/releases and set VOLT_BUNDLETOOL=/path/to/it")
+    proto = os.path.join(tmp, "proto.zip")
+    args = json.load(open(os.path.join(tmp, "link-args.json")))
+    sh([sdk["aapt2"], "link", "--proto-format", "-o", proto] + args)
+    mod = os.path.join(tmp, "base.zip")
+    with zipfile.ZipFile(proto) as zin, zipfile.ZipFile(mod, "w", zipfile.ZIP_DEFLATED) as z:
+        for item in zin.infolist():
+            name = item.filename
+            if name == "AndroidManifest.xml": name = "manifest/AndroidManifest.xml"
+            elif name.startswith("res/") or name == "resources.pb" or name.startswith("assets/"): pass
+            else: continue
+            z.writestr(name, zin.read(item.filename))
+        for i, dx in enumerate(nat["dex"]): z.write(dx, "dex/classes.dex" if i == 0 else "dex/classes%d.dex" % (i + 1))
+        for abi, so in nat["so"]: z.write(so, "lib/%s/%s" % (abi, os.path.basename(so)))
+    unsigned = os.path.join(tmp, "app.aab")
+    sh(["java", "-jar", bt, "build-bundle", "--modules=" + mod, "--output=" + unsigned, "--overwrite"])
+    ks, pw = keystore()
+    shutil.copy(unsigned, out)
+    sh(["jarsigner", "-keystore", ks, "-storepass", pw, "-keypass", pw, "-sigalg", "SHA256withRSA", "-digestalg", "SHA-256", out, "volt"])
+    return out
+
+
+def build_apk(app, server, label=None, out=None, channel="prod", fmt="apk"):
     with build_lock:
         os.makedirs(BUILD, exist_ok=True)
+        cfg = app_config(app); feats = cfg["features"]
+        if channel == "prod" and feats.get("requireHttps", True) and not server.startswith("https://") and not os.environ.get("VOLT_ALLOW_HTTP"):
+            raise RuntimeError("production builds must use an https:// server (set features.requireHttps=false in app.json or VOLT_ALLOW_HTTP=1 to override)")
         sdk = sdk_paths(); nat = compile_native(sdk, app_dir(app) if app else None)
         for w in nat["warnings"]: print("⚠", w, file=sys.stderr)
-        pkg = "dev.volt.player" if not app else "dev.volt.app." + (re.sub(r"[^a-z0-9]", "", app) or "x") + ("" if channel == "prod" else "." + channel)
-        label = label or ((app.replace("-", " ").title() + ("" if channel == "prod" else " (dev)")) if app else "VoltForge")
-        out = out or os.path.join(BUILD, "%s-%s.apk" % (app or "voltforge-player", channel))
+        base_pkg = cfg.get("package") or ("dev.volt.player" if not app else "dev.volt.app." + (re.sub(r"[^a-z0-9]", "", app) or "x"))
+        if not re.match(r"^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$", base_pkg): raise RuntimeError("invalid package id: " + base_pkg)
+        pkg = base_pkg + ("" if channel == "prod" or not app else "." + channel)
+        label = label or cfg.get("label") or ((app.replace("-", " ").title()) if app else "VoltForge")
+        if channel != "prod" and app: label += " (dev)"
+        out = out or os.path.join(BUILD, "%s-%s.%s" % (app or "voltforge-player", channel, fmt))
+        perm = lambda names: "\n    ".join('<uses-permission android:name="android.permission.%s" />' % x for x in names)
+        orient = cfg.get("orientation")
         with tempfile.TemporaryDirectory() as tmp:
-            man = open(os.path.join(ANDROID, "AndroidManifest.xml")).read().replace("{{PKG}}", pkg).replace("{{LABEL}}", xml_escape(label)).replace("{{PERMS}}", "\n    ".join('<uses-permission android:name="%s" />' % xml_escape(p) for p in nat["perms"]))
+            man = open(os.path.join(ANDROID, "AndroidManifest.xml")).read().replace("{{PKG}}", pkg).replace("{{LABEL}}", xml_escape(label)) \
+                .replace("{{LOCATION}}", perm(["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]) if feats.get("location") else "") \
+                .replace("{{NOTIFICATIONS}}", perm(["POST_NOTIFICATIONS"]) if feats.get("notifications") else "") \
+                .replace("{{BOOT}}", perm(["RECEIVE_BOOT_COMPLETED"]) if feats.get("backgroundJobs") else "") \
+                .replace("{{CLEARTEXT}}", "false" if server.startswith("https://") else "true") \
+                .replace("{{ORIENTATION}}", 'android:screenOrientation="%s" ' % orient if orient in ("portrait", "landscape", "sensor") else "")
+            icon = cfg.get("icon") and os.path.join(app_dir(app), cfg["icon"])
+            res_dir = os.path.join(tmp, "res"); shutil.copytree(os.path.join(ANDROID, "res"), res_dir)
+            if icon:
+                if not os.path.exists(icon) or not icon.lower().endswith(".png"): raise RuntimeError("app.json icon must be a .png inside the app folder")
+                os.makedirs(os.path.join(res_dir, "mipmap-xxxhdpi")); shutil.copy(icon, os.path.join(res_dir, "mipmap-xxxhdpi", "ic_launcher.png"))
+                man = man.replace('android:icon="@drawable/ic_volt"', 'android:icon="@mipmap/ic_launcher"').replace("{{PERMS}}", "\n    ".join('<uses-permission android:name="%s" />' % xml_escape(p) for p in nat["perms"]))
             open(os.path.join(tmp, "AndroidManifest.xml"), "w").write(man)
             os.makedirs(os.path.join(tmp, "assets"))
-            json.dump({"server": server.rstrip("/"), "app": app or "", "channel": channel, "token": DEVICE_KEY}, open(os.path.join(tmp, "assets", "volt.json"), "w"))
+            pins = cfg.get("pins") or [p for p in os.environ.get("VOLT_PINS", "").split(",") if p]
+            json.dump({"server": server.rstrip("/"), "app": app or "", "channel": channel, "token": DEVICE_KEY, "pins": pins, "features": feats},
+                      open(os.path.join(tmp, "assets", "volt.json"), "w"))
             json.dump(nat["plugins"], open(os.path.join(tmp, "assets", "plugins.json"), "w"))
-            sh([sdk["aapt2"], "compile", "--dir", os.path.join(ANDROID, "res"), "-o", os.path.join(tmp, "res.zip")])
+            sh([sdk["aapt2"], "compile", "--dir", res_dir, "-o", os.path.join(tmp, "res.zip")])
             un = os.path.join(tmp, "un.apk")
+            link_args = ["-I", sdk["jar"], "--manifest", os.path.join(tmp, "AndroidManifest.xml"), "--min-sdk-version", str(cfg.get("minSdk", 24)),
+                "--target-sdk-version", str(cfg.get("targetSdk", 35)), "--version-code", str(cfg.get("versionCode") or now() // 60), "--version-name", str(cfg.get("version", "1.0")),
+                "-A", os.path.join(tmp, "assets"), os.path.join(tmp, "res.zip")]
+            json.dump(link_args, open(os.path.join(tmp, "link-args.json"), "w"))
             sh([sdk["aapt2"], "link", "-o", un, "-I", sdk["jar"], "--manifest", os.path.join(tmp, "AndroidManifest.xml"), "--min-sdk-version", "24",
-                "--target-sdk-version", "34", "--version-code", str(now() // 60), "--version-name", "1.0", "-A", os.path.join(tmp, "assets"), os.path.join(tmp, "res.zip")])
+                "--target-sdk-version", str(cfg.get("targetSdk", 35)), "--version-code", str(cfg.get("versionCode") or now() // 60), "--version-name", str(cfg.get("version", "1.0")), "-A", os.path.join(tmp, "assets"), os.path.join(tmp, "res.zip")])
+            if fmt == "aab":
+                return build_aab(sdk, tmp, un, nat, out)
             with zipfile.ZipFile(un, "a", zipfile.ZIP_DEFLATED) as z:
                 for i, dx in enumerate(nat["dex"]): z.write(dx, "classes.dex" if i == 0 else "classes%d.dex" % (i + 1))
                 for abi, so in nat["so"]: z.write(so, "lib/%s/%s" % (abi, os.path.basename(so)))
@@ -610,6 +716,9 @@ def list_files(d):
     return out
 
 
+FAILS = {}
+
+
 class Api(Exception):
     def __init__(self, code, msg): self.code, self.msg = code, msg
 
@@ -628,6 +737,10 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "no-referrer")
+        if os.environ.get("VOLT_HSTS") or self.headers.get("X-Forwarded-Proto") == "https":
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if "Cache-Control" not in (extra or {}): self.send_header("Cache-Control", "no-store")
         for k, v in (extra or {}).items(): self.send_header(k, v)
         self.end_headers(); self.wfile.write(body)
@@ -703,9 +816,13 @@ class H(BaseHTTPRequestHandler):
         if r == "meta":
             return self.send(200, {"langs": available_langs(), "ip": lan_ip(), "port": self.server.server_port, "open": open_mode(), "deviceKey": bool(DEVICE_KEY)})
         if r == "login" and m == "POST":
+            ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip()
+            recent = [t for t in FAILS.get(ip, []) if t > time.time() - 600]
+            if len(recent) >= 10: raise Api(429, "too many failed logins, try again in 10 minutes")
             b = self.body(); row = db.one("SELECT pw, role FROM users WHERE name=?", b.get("user", ""))
             if not row or not check_pw(b.get("password", ""), row[0]):
-                time.sleep(0.5); raise Api(401, "invalid credentials")
+                FAILS[ip] = recent + [time.time()]; time.sleep(0.5); raise Api(401, "invalid credentials")
+            FAILS.pop(ip, None)
             audit(b["user"], "login"); return self.send(200, {"token": new_token(b["user"]), "user": b["user"], "role": row[1]})
         if r == "logout" and m == "POST":
             db.q("DELETE FROM tokens WHERE hash=? AND kind='session'", hashlib.sha256((self.token() or "").encode()).hexdigest()); return self.send(200, {"ok": True})
@@ -843,9 +960,12 @@ class H(BaseHTTPRequestHandler):
             host = self.headers.get("Host", "%s:%d" % (lan_ip(), self.server.server_port))
             chan = q.get("channel", ["prod"])[0]
             if chan not in CHANNELS: raise Api(400, "bad channel")
-            path = build_apk(name, q.get("server", ["http://" + host])[0], q.get("label", [None])[0], None, chan)
-            audit(user, "apk.build", name, chan)
-            return self.send(200, open(path, "rb").read(), "application/vnd.android.package-archive", {"Content-Disposition": 'attachment; filename="%s-%s.apk"' % (name, chan)})
+            fmt = q.get("format", ["apk"])[0]
+            if fmt not in ("apk", "aab"): raise Api(400, "format must be apk or aab")
+            path = build_apk(name, q.get("server", ["http://" + host])[0], q.get("label", [None])[0], None, chan, fmt)
+            audit(user, "%s.build" % fmt, name, chan)
+            return self.send(200, open(path, "rb").read(), "application/vnd.android.package-archive" if fmt == "apk" else "application/octet-stream",
+                             {"Content-Disposition": 'attachment; filename="%s-%s.%s"' % (name, chan, fmt)})
         raise Api(404, "not found")
 
 
@@ -883,11 +1003,12 @@ def main():
     s = sub.add_parser("serve", help="run the server + web IDE"); s.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8787))); s.add_argument("--host", default="0.0.0.0")
     n = sub.add_parser("new", help="create an app"); n.add_argument("name"); n.add_argument("lang", choices=[e[1:] for e in LANGS])
     sub.add_parser("ls", help="list apps")
+    pn = sub.add_parser("pin", help="print TLS certificate pins for a server (for app.json \"pins\")"); pn.add_argument("url")
     t = sub.add_parser("test", help="run an app's tests (exit 1 on failure)"); t.add_argument("name", nargs="?"); t.add_argument("--all", action="store_true")
     r = sub.add_parser("release", help="snapshot an app as a release (tests must pass)"); r.add_argument("name"); r.add_argument("--note", default=""); r.add_argument("--deploy", action="store_true"); r.add_argument("--force", action="store_true")
     d = sub.add_parser("deploy", help="point production at a release (deploy or rollback)"); d.add_argument("name"); d.add_argument("n", type=int)
     b = sub.add_parser("apk", help="build a signed APK"); b.add_argument("name", nargs="?", help="app name (omit for the generic player)")
-    b.add_argument("--server", required=True); b.add_argument("--channel", default="prod", choices=CHANNELS); b.add_argument("--label"); b.add_argument("--out"); b.add_argument("--install", action="store_true")
+    b.add_argument("--server", required=True); b.add_argument("--channel", default="prod", choices=CHANNELS); b.add_argument("--format", default="apk", choices=["apk", "aab"]); b.add_argument("--label"); b.add_argument("--out"); b.add_argument("--install", action="store_true")
     u = sub.add_parser("user", help="manage users"); u.add_argument("action", choices=["add", "del", "ls"]); u.add_argument("name", nargs="?")
     u.add_argument("--role", default="developer", choices=list(ROLES)); u.add_argument("--password")
     k = sub.add_parser("token", help="create an API token for CI"); k.add_argument("user"); k.add_argument("--label", default="ci")
@@ -900,6 +1021,8 @@ def main():
         dd = app_dir(a.name); os.makedirs(os.path.join(dd, "assets")); os.makedirs(os.path.join(dd, "tests"))
         shutil.copy(os.path.join(TPL, "main." + a.lang), os.path.join(dd, "main." + a.lang))
         shutil.copy(os.path.join(TPL, "smoke.json"), os.path.join(dd, "tests", "smoke.json")); print("created", os.path.relpath(dd))
+    elif a.cmd == "pin":
+        for pin in cert_pins(a.url): print(pin)
     elif a.cmd == "ls":
         for x in list_apps(): rt = get_rt(x); print("%-24s %-11s prod=%s" % (x, LANGS[rt.ext][1] if rt.ext else "?", deployed(x) or "-"))
     elif a.cmd == "test":
@@ -921,7 +1044,7 @@ def main():
     elif a.cmd == "deploy":
         deploy(a.name, a.n, os.environ.get("USER", "cli")); print("prod → r%d (running servers switch within a second)" % a.n)
     elif a.cmd == "apk":
-        out = build_apk(a.name, a.server, a.label, a.out, a.channel); print("built", out)
+        out = build_apk(a.name, a.server, a.label, a.out, a.channel, a.format); print("built", out)
         if a.install: print(sh(["adb", "install", "-r", out]).strip())
     elif a.cmd == "user":
         if a.action == "ls":

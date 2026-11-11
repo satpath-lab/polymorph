@@ -49,6 +49,11 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
 .sw.on i{background:#6C3BFF}.sw.on i:after{left:20px}
 .pbar{height:4px;border-radius:2px;background:#0002;overflow:hidden}.pbar>div{height:100%;background:#6C3BFF}
 .spin{width:28px;height:28px;border:3px solid #0002;border-top-color:#6C3BFF;border-radius:50%;animation:s 1s linear infinite;margin:auto}@keyframes s{to{transform:rotate(1turn)}}
+.v-sel{border:1px solid #d9dce3;border-radius:12px;padding:10px;font-size:16px;background:#fff;color:#1f2328}
+.v-rng{width:100%;accent-color:#6C3BFF}.v-chk{display:flex;gap:10px;align-items:center;cursor:pointer;padding:4px 0}.v-chk input{width:18px;height:18px;accent-color:#6C3BFF}
+.tabbar{display:flex;background:#fff;box-shadow:0 -2px 8px #0001;flex:none}.tabbar div{flex:1;text-align:center;padding:6px 0;cursor:pointer;font-size:12px;color:#6b7280}.tabbar div b{display:block;font-size:20px;font-weight:400;opacity:.55}.tabbar div.on b{opacity:1}
+.dlg{position:absolute;inset:0;background:#0006;display:flex;align-items:center;justify-content:center;z-index:5}.dlg>div{background:#fff;border-radius:20px;padding:20px;width:80%;box-shadow:0 10px 40px #0005}
+.dlg h3{margin:0 0 8px;font-size:18px}.dlg p{margin:0 0 16px;color:#4b5563}.dlg .bt{display:flex;justify-content:flex-end;gap:14px}.dlg .bt span{color:#6C3BFF;font-weight:700;cursor:pointer;text-transform:uppercase;font-size:14px}
 .apk{display:flex;gap:6px;width:360px}.apk input{flex:1;min-width:0}.hint{color:var(--mute);font-size:12px;width:360px;text-align:center}
 #login{position:fixed;inset:0;background:#0d0f14ee;display:none;align-items:center;justify-content:center;z-index:9}
 #login form{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px;display:grid;gap:10px;width:320px}
@@ -104,8 +109,8 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
   </section>
   <section class="right">
     <div class="seg" id="chan"><button data-c="dev" class="on">Dev (live draft)</button><button data-c="prod">Production</button></div>
-    <div class="phone"><div class="screen" id="screen"><div class="sbar" id="sbar"></div><div class="abar" id="abar">…</div><div class="content" id="content"></div><div class="toast" id="toast"></div></div></div>
-    <div class="apk dev-only"><input id="apksrv" title="Server URL the phone will use"><select id="apkch"><option value="prod">prod</option><option value="dev">dev</option></select><button class="pri" id="apkbtn">⬇ APK</button></div>
+    <div class="phone"><div class="screen" id="screen"><div class="sbar" id="sbar"></div><div class="abar" id="abar">…</div><div class="content" id="content"></div><div class="toast" id="toast"></div><div id="dlgwrap"></div></div></div>
+    <div class="apk dev-only"><input id="apksrv" title="Server URL the phone will use"><select id="apkch"><option value="prod">prod</option><option value="dev">dev</option></select><select id="apkfmt"><option value="apk">.apk</option><option value="aab">.aab</option></select><button class="pri" id="apkbtn">⬇ APK</button></div>
     <div class="hint" id="hint"></div>
   </section>
 </main>
@@ -365,6 +370,14 @@ function nativeFx(fx) {
   if (fx.share) { if (navigator.share) navigator.share({ text: fx.share }).catch(() => {}); else { navigator.clipboard && navigator.clipboard.writeText(fx.share); toast('📤 preview: share text copied'); } }
   if (fx.clipboard) navigator.clipboard && navigator.clipboard.writeText(fx.clipboard).catch(() => {});
   if (fx.contact) { toast('👤 preview: sample contact'); setTimeout(() => result(fx.contact, { name: 'Ada Lovelace', phone: '+1 555 0100' }), 300); }
+  for (const [k, type] of [['pickDate', 'date'], ['pickTime', 'time']]) if (fx[k]) {
+    const o = typeof fx[k] === 'object' ? fx[k] : { id: fx[k] };
+    const inp = document.createElement('input'); inp.type = type; inp.value = o.value || ''; inp.style.cssText = 'position:absolute;opacity:0;pointer-events:none';
+    document.body.appendChild(inp);
+    inp.onchange = () => { result(o.id || type, inp.value); inp.remove(); };
+    inp.addEventListener('cancel', () => { result(o.id || type, { error: 'cancelled' }); inp.remove(); });
+    try { inp.showPicker(); } catch (e) { const v = prompt(type === 'date' ? 'Date (YYYY-MM-DD)' : 'Time (HH:MM)', o.value || ''); inp.remove(); result(o.id || type, v ? v : { error: 'cancelled' }); }
+  }
   if (fx.native) [].concat(fx.native).forEach(n => {
     toast(`🧩 ${n.plugin}.${n.method}() runs only on the phone`);
     setTimeout(() => result(n.id || n.plugin + '.' + n.method, { error: 'native plugins run on the device only (preview)' }), 300);
@@ -392,20 +405,54 @@ function shade(hex, f) {
   return `rgb(${c(16)},${c(8)},${c(0)})`;
 }
 
-let backId = null;
+let backId = null, curScreen = null;
+function styled(n) {
+  const sc = curScreen || {}, theme = sc.theme, styles = sc.styles;
+  if (!theme && !(styles && n.style)) return n;
+  const out = Object.assign({}, theme && theme.all, theme && theme[n.type || 'column']);
+  if (styles && n.style) [].concat(n.style).forEach(k => Object.assign(out, styles[k]));
+  Object.assign(out, n); delete out.style; return out;
+}
+function bgCss(n) {
+  if (Array.isArray(n.gradient) && n.gradient.length > 1) return `linear-gradient(${(n.angle ?? 90) + 90}deg, ${n.gradient.join(',')})`;
+  return n.bg;
+}
+const animatedKeys = new Set();
 function render(s) {
   const acc = s.accent || '#6C3BFF';
   $('#abar').textContent = s.title || cur; $('#abar').style.background = acc; $('#abar').style.display = s.hideBar ? 'none' : 'flex';
   $('#sbar').style.background = shade(acc, .8);
   $('#screen').style.background = s.bg || '#f4f5f7';
-  backId = s.back || null;
+  backId = s.back || null; curScreen = s;
   const c = $('#content'), y = c.scrollTop, used = new Set();
   const node = s.body ? build(s.body, 'col', 'start', used) : document.createElement('div');
   for (const k in inputEls) if (!used.has(k)) { delete inputEls[k]; delete inputs[k]; delete lastVal[k]; }
   c.replaceChildren(node); c.scrollTop = y;
   const route = s.route || '';
   if (lastRoute !== null && route !== lastRoute) c.animate([{ transform: `translateX(${goingBack ? -60 : 60}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 200, easing: 'ease-out' });
+  if (lastRoute !== null && route !== lastRoute) animatedKeys.clear();
   lastRoute = route; goingBack = false;
+  $('#screen').querySelectorAll('.tabbar').forEach(x => x.remove());
+  if (s.tabs) {
+    const bar = document.createElement('div'); bar.className = 'tabbar'; bar.style.background = s.tabs.bg || '#fff';
+    (s.tabs.items || []).forEach(it => {
+      const d = document.createElement('div'); const on = it.id === s.tabs.selected; d.className = on ? 'on' : '';
+      d.innerHTML = `<b>${esc(it.icon || '•')}</b>${esc(it.label || it.id)}`; if (on) { d.style.color = s.tabs.color || s.accent || '#6C3BFF'; d.style.fontWeight = 700; }
+      d.onclick = () => run(ev('tap', it.id)); bar.appendChild(d);
+    });
+    $('#screen').insertBefore(bar, $('#toast'));
+  }
+  const dw = $('#dlgwrap'), dk = s.dialog ? JSON.stringify(s.dialog) : '';
+  if (dw.dataset.k !== dk) {
+    dw.dataset.k = dk; dw.innerHTML = '';
+    if (s.dialog) {
+      const d = s.dialog, box = document.createElement('div'); box.className = 'dlg';
+      box.innerHTML = `<div>${d.title ? `<h3>${esc(d.title)}</h3>` : ''}${d.text ? `<p>${esc(d.text)}</p>` : ''}<div class="bt"></div></div>`;
+      (d.buttons || []).slice(0, 3).reverse().forEach(b => { const sp = document.createElement('span'); sp.textContent = b.text || 'OK'; sp.onclick = () => { dw.innerHTML = ''; dw.dataset.k = ''; run(ev('tap', b.id)); }; box.querySelector('.bt').appendChild(sp); });
+      if (d.cancel) box.onclick = e => { if (e.target === box) { dw.innerHTML = ''; dw.dataset.k = ''; run(ev('tap', d.cancel)); } };
+      dw.appendChild(box);
+    }
+  }
   c.style.overflow = s.scroll === false ? 'hidden' : 'auto';
   c.style.display = s.scroll === false ? 'flex' : ''; c.style.flexDirection = 'column';
   if (s.scroll === false) { node.style.flex = '1 1 0'; node.style.minHeight = '0'; }
@@ -413,6 +460,7 @@ function render(s) {
 
 const px = v => typeof v === 'number' ? v + 'px' : v;
 function build(n, parent, palign, used) {
+  n = styled(n);
   const t = n.type || 'column', id = n.id || '';
   let el;
   if (['column', 'row', 'card', 'hscroll'].includes(t)) {
@@ -421,8 +469,10 @@ function build(n, parent, palign, used) {
     const map = { start: 'flex-start', center: 'center', end: 'flex-end' };
     Object.assign(el.style, { display: 'flex', flexDirection: row ? 'row' : 'column', gap: px(n.gap ?? (t === 'card' ? 6 : 0)) });
     if (row) { el.style.alignItems = 'center'; el.style.justifyContent = map[al]; } else el.style.alignItems = al === 'start' ? 'stretch' : map[al];
+    const jm = { center: 'center', end: 'flex-end', between: 'space-between', around: 'space-around', evenly: 'space-evenly' };
+    if (n.justify && jm[n.justify]) el.style.justifyContent = jm[n.justify];
     if (t === 'hscroll') el.style.overflowX = 'auto';
-    if (t === 'card') Object.assign(el.style, { background: n.bg || '#fff', borderRadius: px(n.radius ?? 16), padding: '16px', boxShadow: `0 ${n.elevation ?? 2}px ${(n.elevation ?? 2) * 3}px #0002` });
+    if (t === 'card') Object.assign(el.style, { background: bgCss(n) || '#fff', borderRadius: px(n.radius ?? 16), padding: '16px', boxShadow: `0 ${n.elevation ?? 2}px ${(n.elevation ?? 2) * 3}px #0002` });
     (n.children || []).forEach(ch => { if (ch && typeof ch === 'object') el.appendChild(build(ch, row ? 'row' : 'col', al, used)); });
   } else if (t === 'text') {
     el = document.createElement('div'); el.textContent = n.text ?? '';
@@ -459,6 +509,55 @@ function build(n, parent, palign, used) {
     const src = n.src || ''; el.src = /^https?:/.test(src) ? src : src.startsWith('/') ? src : `/apps/${cur}/assets/${src}?ch=${chan}`;
     Object.assign(el.style, { objectFit: n.fit === 'contain' ? 'contain' : 'cover', borderRadius: px(n.radius ?? 12), background: n.bg || '#e5e7eb', height: '180px', display: 'block', minWidth: 0 });
     if (parent === 'row') el.style.width = '120px';
+  } else if (t === 'select') {
+    el = document.createElement('select'); el.className = 'v-sel';
+    (n.options || []).forEach(o => { const op = document.createElement('option'); op.value = typeof o === 'object' ? o.value : o; op.textContent = typeof o === 'object' ? (o.label ?? o.value) : o; el.appendChild(op); });
+    el.value = n.value ?? ''; el.onchange = () => run(ev('change', id, el.value));
+  } else if (t === 'slider') {
+    el = document.createElement('input'); el.type = 'range'; el.className = 'v-rng';
+    el.min = n.min ?? 0; el.max = n.max ?? 100; el.step = n.step ?? 1; el.value = n.value ?? el.min;
+    if (n.color) el.style.accentColor = n.color;
+    el.onchange = () => run(ev('change', id, +el.value));
+  } else if (t === 'checkbox') {
+    el = document.createElement('label'); el.className = 'v-chk'; el.innerHTML = '<input type="checkbox"><span></span>';
+    el.firstChild.checked = !!n.value; el.lastChild.textContent = n.text || '';
+    el.firstChild.onchange = () => run(ev('change', id, el.firstChild.checked));
+  } else if (t === 'radio') {
+    el = document.createElement('div'); Object.assign(el.style, { display: 'flex', flexDirection: n.horizontal ? 'row' : 'column', gap: '6px' });
+    (n.options || []).forEach(o => {
+      const val = typeof o === 'object' ? o.value : o, l = document.createElement('label'); l.className = 'v-chk';
+      l.innerHTML = `<input type="radio" name="r_${esc(id)}"><span></span>`; l.lastChild.textContent = typeof o === 'object' ? (o.label ?? val) : o;
+      l.firstChild.checked = val === n.value; l.firstChild.onchange = () => run(ev('change', id, val)); el.appendChild(l);
+    });
+  } else if (t === 'grid') {
+    el = document.createElement('div'); Object.assign(el.style, { display: 'grid', gridTemplateColumns: `repeat(${n.columns || 2}, minmax(0,1fr))`, gap: px(n.gap ?? 8) });
+    (n.children || []).forEach(ch => { if (ch && typeof ch === 'object') el.appendChild(build(ch, 'col', 'start', used)); });
+  } else if (t === 'chart') {
+    el = chartSvg(n);
+  } else if (t === 'canvas') {
+    el = canvasSvg(n);
+    if (id) { el.style.cursor = 'pointer'; el.onclick = e => { const r = el.getBoundingClientRect(); run(ev('tap', id, { x: Math.round(e.clientX - r.left), y: Math.round(e.clientY - r.top) })); }; }
+    applyBox(el, n, parent, palign); return el;
+  } else if (t === 'web') {
+    el = document.createElement('iframe'); el.style.border = '0'; el.style.width = '100%'; el.style.height = '240px'; el.style.display = 'block';
+    if (n.html) el.srcdoc = n.html; else el.src = /^https?:/.test(n.url || '') ? n.url : `/apps/${cur}/assets/${n.url}?ch=${chan}`;
+  } else if (t === 'video') {
+    el = document.createElement('video'); const src = n.src || '';
+    el.src = /^https?:/.test(src) ? src : src.startsWith('/') ? src : `/apps/${cur}/assets/${src}?ch=${chan}`;
+    el.controls = n.controls !== false; el.autoplay = !!n.autoplay; el.loop = !!n.loop; el.muted = !!n.muted || !!n.autoplay; el.playsInline = true;
+    Object.assign(el.style, { width: '100%', height: '200px', background: '#000', display: 'block' });
+  } else if (t === 'native') {
+    el = document.createElement('div'); el.textContent = `🧩 native view "${n.plugin}" (renders on the phone)`;
+    Object.assign(el.style, { border: '1px dashed #a78bfa', borderRadius: '12px', padding: '16px', color: '#6d28d9', textAlign: 'center', fontSize: '13px' });
+  } else if (t === 'stack') {
+    el = document.createElement('div'); el.style.position = 'relative';
+    (n.children || []).forEach(ch => {
+      if (!ch || typeof ch !== 'object') return;
+      const c = build(ch, 'col', 'start', used), pos = ch.position;
+      if (pos) { c.style.position = 'absolute'; for (const k of ['top', 'left', 'right', 'bottom']) if (pos[k] != null) c.style[k] = px(pos[k]);
+        if (pos.center) Object.assign(c.style, { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }); }
+      el.appendChild(c);
+    });
   } else if (t === 'list') {
     el = document.createElement('div');
     Object.assign(el.style, { display: 'flex', flexDirection: 'column', gap: px(n.gap ?? 8), overflowY: 'auto', flex: '1 1 0', minHeight: '0' });
@@ -484,11 +583,69 @@ function build(n, parent, palign, used) {
   } else { el = document.createElement('div'); el.textContent = '[unknown type: ' + t + ']'; el.style.color = '#b91c1c'; }
   applyBox(el, n, parent, palign);
   if (id && !['button', 'input', 'switch'].includes(t)) { el.classList.add('v-tap'); el.onclick = () => run(ev('tap', id)); }
-  if (n.bg && !['button', 'card', 'image'].includes(t)) el.style.background = n.bg;
-  if (n.radius != null && !['button', 'card', 'image'].includes(t)) el.style.borderRadius = px(n.radius);
+  if ((n.bg || n.gradient) && !['card', 'image'].includes(t)) el.style.background = bgCss(n);
+  if (n.radius != null && !['card', 'image'].includes(t)) el.style.borderRadius = Array.isArray(n.radius) ? n.radius.map(px).join(' ') : px(n.radius);
+  if (Array.isArray(n.radius) && t === 'card') el.style.borderRadius = n.radius.map(px).join(' ');
   return el;
 }
 
+const PALETTE = ['#6C3BFF', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#14B8A6', '#8B5CF6'];
+const fontsLoaded = new Set();
+function loadFont(name) {
+  if (fontsLoaded.has(name) || !window.FontFace) return; fontsLoaded.add(name);
+  const file = name.includes('.') ? name : name + '.ttf';
+  new FontFace('vf-' + name, `url(/apps/${cur}/assets/fonts/${file}?ch=${chan})`).load().then(f => document.fonts.add(f)).catch(() => {});
+}
+function svgEl(tag, attrs) { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+function chartSvg(n) {
+  const W = 320, H = n.height || 200, svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', height: H }); svg.style.display = 'block';
+  const series = n.series || [{ values: n.data || [] }], kind = n.kind || 'line', tc = n.textColor || '#6B7280';
+  if (kind === 'pie' || kind === 'donut') {
+    const vals = (series[0].values || []).map(v => Math.max(0, +v || 0)), tot = vals.reduce((a, b) => a + b, 0) || 1, r = Math.min(W, H) / 2 - 4, cx = W / 2, cy = H / 2;
+    let a0 = -Math.PI / 2;
+    vals.forEach((v, i) => {
+      const a1 = a0 + v / tot * Math.PI * 2, big = a1 - a0 > Math.PI ? 1 : 0;
+      svg.appendChild(svgEl('path', { d: `M${cx},${cy} L${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)} A${r},${r} 0 ${big} 1 ${cx + r * Math.cos(a1)},${cy + r * Math.sin(a1)} Z`, fill: (n.colors || [])[i] || PALETTE[i % 8] }));
+      a0 = a1;
+    });
+    if (kind === 'donut') svg.appendChild(svgEl('circle', { cx, cy, r: r * 0.6, fill: n.hole || '#fff' }));
+    return svg;
+  }
+  let lo = 0, hi = 0, cnt = 0;
+  series.forEach(s => (s.values || []).forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); })); series.forEach(s => cnt = Math.max(cnt, (s.values || []).length));
+  if (!cnt) return svg; if (hi === lo) hi = lo + 1;
+  const L = 40, R = 8, T = 8, B = 22, pw = W - L - R, ph = H - T - B, slot = pw / cnt, Y = v => T + ph - (v - lo) / (hi - lo) * ph;
+  const fmt = v => Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : Math.abs(v) >= 1e3 ? (v / 1e3).toFixed(1) + 'k' : (Number.isInteger(v) ? v : v.toFixed(1));
+  for (let g = 0; g <= 4; g++) { const v = lo + (hi - lo) * g / 4, y = Y(v); svg.appendChild(svgEl('line', { x1: L, x2: W - R, y1: y, y2: y, stroke: '#00000014' })); const tx = svgEl('text', { x: L - 6, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: tc }); tx.textContent = fmt(v); svg.appendChild(tx); }
+  const every = Math.max(1, Math.ceil(cnt / (pw / 48)));
+  (n.labels || []).forEach((lb, i) => { if (i % every || i >= cnt) return; const tx = svgEl('text', { x: L + slot * i + slot / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 11, fill: tc }); tx.textContent = lb; svg.appendChild(tx); });
+  series.forEach((s, si) => {
+    const col = s.color || PALETTE[si % 8], v = s.values || [];
+    if (kind === 'bar') { const bw = slot * 0.8 / series.length; v.forEach((x, i) => { const y = Y(x), z = Y(0); svg.appendChild(svgEl('rect', { x: L + slot * i + slot * 0.1 + bw * si, y: Math.min(y, z), width: Math.max(1, bw - 2), height: Math.abs(z - y), rx: 3, fill: col })); }); }
+    else {
+      svg.appendChild(svgEl('polyline', { points: v.map((x, i) => `${L + slot * i + slot / 2},${Y(x)}`).join(' '), fill: 'none', stroke: col, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }));
+      if (cnt <= 40) v.forEach((x, i) => svg.appendChild(svgEl('circle', { cx: L + slot * i + slot / 2, cy: Y(x), r: 3, fill: col })));
+    }
+  });
+  return svg;
+}
+function canvasSvg(n) {
+  const H = n.height || 240, svg = svgEl('svg', { width: '100%', height: H }); svg.style.display = 'block';
+  (n.ops || []).forEach(o => {
+    const col = o.color || '#1f2328', stroke = o.stroke != null || o.op === 'line', fill = stroke && !o.fill ? 'none' : col, sw = o.width ?? o.stroke ?? 2, base = { opacity: o.opacity ?? 1 };
+    const st = stroke ? { stroke: col, 'stroke-width': sw, 'stroke-linecap': 'round' } : {};
+    let e;
+    if (o.op === 'rect') e = svgEl('rect', { x: o.x, y: o.y, width: o.w, height: o.h, rx: o.radius || 0, fill, ...st, ...base });
+    else if (o.op === 'circle') e = svgEl('circle', { cx: o.x, cy: o.y, r: o.r, fill, ...st, ...base });
+    else if (o.op === 'line') e = svgEl('line', { x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2, ...st, ...base });
+    else if (o.op === 'path' && o.points && o.points.length) e = svgEl('path', { d: o.points.map((p, i) => (i ? 'L' : 'M') + p[0] + ',' + p[1]).join(' ') + (o.close ? ' Z' : ''), fill, ...st, ...base });
+    else if (o.op === 'arc') { const a0 = (o.start || 0) * Math.PI / 180, a1 = a0 + (o.sweep ?? 90) * Math.PI / 180, big = Math.abs(a1 - a0) > Math.PI ? 1 : 0;
+      e = svgEl('path', { d: `${stroke ? '' : `M${o.x},${o.y} L`}${stroke ? 'M' : ''}${o.x + o.r * Math.cos(a0)},${o.y + o.r * Math.sin(a0)} A${o.r},${o.r} 0 ${big} 1 ${o.x + o.r * Math.cos(a1)},${o.y + o.r * Math.sin(a1)}${stroke ? '' : ' Z'}`, fill, ...st, ...base }); }
+    else if (o.op === 'text') { e = svgEl('text', { x: o.x, y: o.y, fill: col, 'font-size': o.size || 14, 'font-weight': o.bold ? 700 : 400, 'text-anchor': { center: 'middle', end: 'end' }[o.align] || 'start', ...base }); e.textContent = o.text || ''; }
+    if (e) svg.appendChild(e);
+  });
+  return svg;
+}
 function applyBox(el, n, parent, palign) {
   const p = n.padding;
   if (p != null) el.style.padding = Array.isArray(p) ? p.map(px).join(' ') : px(p);
@@ -498,6 +655,31 @@ function applyBox(el, n, parent, palign) {
   if (n.height != null) el.style.height = dim(n.height);
   if (n.flex != null) { el.style.flex = n.flex + ' 1 0'; el.style.minWidth = '0'; el.style.minHeight = '0'; }
   if (n.opacity != null) el.style.opacity = n.opacity;
+  for (const k of ['paddingTop', 'paddingBottom', 'paddingLeft', 'paddingRight', 'marginTop', 'marginBottom', 'marginLeft', 'marginRight', 'minWidth', 'minHeight', 'maxWidth']) if (n[k] != null) el.style[k] = px(n[k]);
+  if (n.paddingH != null) { el.style.paddingLeft = el.style.paddingRight = px(n.paddingH); }
+  if (n.paddingV != null) { el.style.paddingTop = el.style.paddingBottom = px(n.paddingV); }
+  if (Array.isArray(n.margin)) el.style.margin = n.margin.map(px).join(' ');
+  if (n.border) el.style.border = `${n.borderWidth || 1}px solid ${n.border}`;
+  if (n.elevation && n.type !== 'card') el.style.boxShadow = `0 ${n.elevation}px ${n.elevation * 3}px #0003`;
+  if (n.alignSelf) el.style.alignSelf = { start: 'flex-start', center: 'center', end: 'flex-end' }[n.alignSelf];
+  const tf = [];
+  if (n.rotate) tf.push(`rotate(${n.rotate}deg)`); if (n.scale != null) tf.push(`scale(${n.scale})`);
+  if (tf.length) el.style.transform = tf.join(' ');
+  if (n.letterSpacing != null) el.style.letterSpacing = n.letterSpacing + 'em';
+  if (n.lineHeight != null) el.style.lineHeight = n.lineHeight;
+  if (n.underline || n.strike) el.style.textDecoration = [n.underline && 'underline', n.strike && 'line-through'].filter(Boolean).join(' ');
+  if (n.uppercase) el.style.textTransform = 'uppercase';
+  if (n.weight) el.style.fontWeight = n.weight;
+  if (n.textShadow) el.style.textShadow = `0 1px 2px ${n.textShadow}`;
+  if (n.font) { loadFont(n.font); el.style.fontFamily = `"vf-${n.font}", system-ui`; }
+  const key = n.id || n.key;
+  if (n.animate && key && !animatedKeys.has(key)) {
+    animatedKeys.add(key);
+    const f = n.animate.from || n.animate, from = {};
+    if (f.alpha != null) from.opacity = f.alpha;
+    from.transform = `translate(${f.x || 0}px, ${f.y || 0}px) scale(${f.scale ?? 1}) rotate(${f.rotate || 0}deg)`;
+    el.animate([from, { opacity: n.opacity ?? 1, transform: el.style.transform || 'none' }], { duration: n.animate.duration || 300, delay: n.animate.delay || 0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+  }
   if (n.visible === false) el.style.display = 'none';
   el.style.boxSizing = 'border-box';
 }
@@ -510,7 +692,7 @@ $('#create').onclick = async () => {
 };
 $('#apkbtn').onclick = () => {
   if (!cur) return;
-  const q = new URLSearchParams({ server: $('#apksrv').value.trim(), channel: $('#apkch').value }); if (token) q.set('token', token);
+  const q = new URLSearchParams({ server: $('#apksrv').value.trim(), channel: $('#apkch').value, format: $('#apkfmt').value }); if (token) q.set('token', token);
   $('#hint').textContent = 'Building APK…'; location.href = `/api/apk/${cur}?${q}`;
   setTimeout(() => $('#hint').textContent = 'A prod APK runs only deployed releases. A dev APK follows every save.', 4000);
 };
