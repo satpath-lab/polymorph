@@ -509,7 +509,7 @@ def compile_native(sdk, app_d=None):
     core = walk_ext(os.path.join(ANDROID, "src"), (".java",))
     java, kt, jars, cunits, perms = native_inputs(app_d)
     every = core + java + kt + jars + [f for fs in cunits.values() for f in fs]
-    h = hashlib.sha1(b"".join(f.encode() + open(f, "rb").read() for f in every) + (sdk["jar"] + ",".join(ABIS) + str(perms)).encode()).hexdigest()[:16]
+    h = hashlib.sha1(b"".join(f.encode() + open(f, "rb").read() for f in every) + (sdk["jar"] + ",".join(ABIS) + str(perms) + str(ndk_root(sdk) if cunits else "")).encode()).hexdigest()[:16]
     out = os.path.join(BUILD, "native-" + h)
     done = os.path.join(out, "done.json")
     if os.path.exists(done): return json.load(open(done))
