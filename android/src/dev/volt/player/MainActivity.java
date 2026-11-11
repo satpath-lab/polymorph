@@ -50,6 +50,9 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.widget.AbsListView;
+import android.widget.BaseAdapter;
+import android.widget.ListView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -103,6 +106,14 @@ public class MainActivity extends Activity {
     File camFile;
     boolean goingBack;
     final List<JSONObject> notifQueue = new ArrayList<>();
+    final Map<String, VoltPlugin> plugins = new HashMap<>();
+    Map<String, String> pluginClasses;
+    final Map<Integer, VoltPlugin.PermissionCallback> permCbs = new HashMap<>();
+    final Map<Integer, VoltPlugin.ActivityCallback> actCbs = new HashMap<>();
+    int nextReq = 1000;
+    boolean rootScroll = true;
+    final Map<String, ListView> lists = new HashMap<>();
+    final Set<String> usedLists = new HashSet<>();
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -128,6 +139,7 @@ public class MainActivity extends Activity {
 
     void start() {
         started = true; hasContent = false; ver = -1;
+        prefs.edit().putString("bg:server", server).putString("bg:app", app).putString("bg:channel", channel).putString("bg:token", token).apply();
         setTitle(app);
         host.removeAllViews();
         String cached = prefs.getString("ui:" + app + ":" + channel, null);
@@ -150,6 +162,7 @@ public class MainActivity extends Activity {
             while (watching && watchApp.equals(app)) {
                 try {
                     if (ver < 0) { Thread.sleep(150); continue; }
+                    try { VoltJob.inbox(getApplicationContext()); } catch (Exception ignored) {}
                     JSONObject r = http("GET", "/api/watch/" + watchApp + "?ch=" + channel + "&v=" + ver, null, 35000);
                     long v = r.optLong("v", ver);
                     if (v != ver && watching) { ver = v; send(null); }
@@ -246,11 +259,20 @@ public class MainActivity extends Activity {
         int scrollY = 0;
         View old = host.getChildCount() > 0 ? host.getChildAt(0) : null;
         if (old instanceof ScrollView) scrollY = old.getScrollY();
-        usedInputs.clear();
+        usedInputs.clear(); usedLists.clear();
+        rootScroll = screen.optBoolean("scroll", true);
         JSONObject body = screen.optJSONObject("body");
-        View content = body == null ? new View(this) : build(body, LinearLayout.VERTICAL, "start");
+        View content;
+        try { content = body == null ? new View(this) : build(body, LinearLayout.VERTICAL, "start"); }
+        catch (Throwable t) {
+            TextView tv = new TextView(this);
+            tv.setText("⚠ Could not render this screen\n\n" + t);
+            tv.setTextColor(0xFFB91C1C); tv.setPadding(px(20), px(20), px(20), px(20));
+            content = tv;
+        }
         Iterator<String> it = inputViews.keySet().iterator();
         while (it.hasNext()) { String k = it.next(); if (!usedInputs.contains(k)) { it.remove(); inputs.remove(k); lastServerVal.remove(k); } }
+        lists.keySet().retainAll(usedLists);
         host.removeAllViews();
         if (screen.optBoolean("scroll", true)) {
             ScrollView sv = new ScrollView(this);
@@ -416,6 +438,36 @@ public class MainActivity extends Activity {
                 });
                 v = iv; break;
             }
+            case "list": {
+                final JSONArray items = n.optJSONArray("items") == null ? new JSONArray() : n.optJSONArray("items");
+                if (rootScroll || id.isEmpty()) {
+                    JSONObject col = new JSONObject();
+                    try { col.put("type", "column").put("gap", n.optDouble("gap", 8)).put("children", items); } catch (Exception ignored) {}
+                    v = build(col, parentOrient, parentAlign); break;
+                }
+                ListView lv = lists.get(id);
+                if (lv == null) {
+                    lv = new ListView(this);
+                    lv.setDivider(new ColorDrawable(0));
+                    lv.setSelector(new ColorDrawable(0));
+                    lv.setClipToPadding(false);
+                    lv.setAdapter(new VList());
+                    final VList ad0 = (VList) lv.getAdapter();
+                    lv.setOnScrollListener(new AbsListView.OnScrollListener() {
+                        public void onScrollStateChanged(AbsListView view, int state) {}
+                        public void onScroll(AbsListView view, int first, int visible, int total) {
+                            if (total > 0 && first + visible >= total && ad0.endFired != total && !ad0.onEnd.isEmpty()) { ad0.endFired = total; send(event("tap", ad0.onEnd, null)); }
+                        }
+                    });
+                    lists.put(id, lv);
+                } else if (lv.getParent() != null) ((ViewGroup) lv.getParent()).removeView(lv);
+                usedLists.add(id);
+                lv.setDividerHeight(px(n.optDouble("gap", 8)));
+                VList ad = (VList) lv.getAdapter();
+                ad.items = items; ad.onEnd = n.optString("onEnd", "");
+                ad.notifyDataSetChanged();
+                v = lv; break;
+            }
             case "spacer": v = new View(this); break;
             case "divider": { v = new View(this); v.setBackgroundColor(color(n.optString("color", ""), 0x1F000000)); break; }
             case "progress": {
@@ -449,7 +501,7 @@ public class MainActivity extends Activity {
             bg(v, color(n.optString("bg", ""), 0), n.optDouble("radius", t.equals("card") ? 16 : 0));
         if (n.has("opacity")) v.setAlpha((float) n.optDouble("opacity", 1));
         if (n.has("visible") && !n.optBoolean("visible", true)) v.setVisibility(View.GONE);
-        if (tapId != null && !tapId.isEmpty()) {
+        if (tapId != null && !tapId.isEmpty() && !(v instanceof android.widget.AdapterView)) {
             final String id = tapId;
             v.setClickable(true);
             v.setOnClickListener(x -> send(event("tap", id, null)));
@@ -465,9 +517,10 @@ public class MainActivity extends Activity {
         if (t.equals("divider")) { if (col) { w = -1; h = Math.max(1, px(1)); } else { w = Math.max(1, px(1)); h = -1; } }
         if (t.equals("image")) { h = px(180); if (!col) w = px(120); }
         if (t.equals("spacer")) { int s = px(n.optDouble("size", 0)); if (col) h = s; else w = s; }
+        boolean autoFlex = t.equals("list") && !rootScroll && col && !n.has("height") && !n.has("flex");
         w = dim(n.opt("width"), w); h = dim(n.opt("height"), h);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
-        if (n.has("flex")) { lp.weight = (float) n.optDouble("flex", 1); if (col) lp.height = 0; else lp.width = 0; }
+        if (n.has("flex") || autoFlex) { lp.weight = (float) n.optDouble("flex", 1); if (col) lp.height = 0; else lp.width = 0; }
         if (n.has("margin")) { int m = px(n.optDouble("margin", 0)); lp.setMargins(m, m, m, m); }
         if (!col) lp.gravity = Gravity.CENTER_VERTICAL;
         return lp;
@@ -623,6 +676,16 @@ public class MainActivity extends Activity {
                 pendContact = fx.optString("contact");
                 startActivityForResult(new Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI), RC_CONTACT);
             }
+            if (fx.has("native")) {
+                Object nv = fx.opt("native");
+                JSONArray arr = nv instanceof JSONArray ? (JSONArray) nv : new JSONArray().put(nv);
+                for (int i = 0; i < arr.length(); i++) if (arr.optJSONObject(i) != null) callPlugin(arr.optJSONObject(i));
+            }
+            if (fx.has("background")) {
+                JSONObject bg = fx.optJSONObject("background");
+                if (bg != null && bg.optBoolean("on", true)) { prefs.edit().putBoolean("bg:on", true).apply(); VoltJob.schedule(this, bg.optInt("every", 15)); }
+                else { prefs.edit().putBoolean("bg:on", false).apply(); VoltJob.cancel(this); }
+            }
             if (fx.has("store")) {
                 JSONObject cur = store(), up = fx.optJSONObject("store");
                 if (up != null) {
@@ -686,6 +749,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int rc, int res, Intent data) {
         super.onActivityResult(rc, res, data);
+        VoltPlugin.ActivityCallback acb = actCbs.remove(rc);
+        if (acb != null) { try { acb.done(res, data); } catch (Exception e) { Toast.makeText(this, e.toString(), Toast.LENGTH_SHORT).show(); } return; }
         if (rc == RC_CAM) {
             final String id = pendCam; pendCam = null;
             final File f = camFile;
@@ -819,6 +884,8 @@ public class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int rc, String[] perms, int[] res) {
         boolean ok = false;
         for (int r : res) ok |= r == PackageManager.PERMISSION_GRANTED;
+        VoltPlugin.PermissionCallback pcb = permCbs.remove(rc);
+        if (pcb != null) { boolean all = res.length > 0; for (int r : res) all &= r == PackageManager.PERMISSION_GRANTED; pcb.done(all); return; }
         if (rc == RP_LOC) { if (ok) getLocation(); else { result(pendLoc, err("denied")); pendLoc = null; } }
         else if (rc == RP_NOTIF) {
             if (ok) for (JSONObject n : notifQueue) postNotif(n);
@@ -835,5 +902,64 @@ public class MainActivity extends Activity {
         if (tag == null) return;
         i.removeExtra("volt_tap");
         send(event("notification", tag, null));
+    }
+
+    // ---------------------------------------------------------------- plugins
+    class VList extends BaseAdapter {
+        JSONArray items = new JSONArray(); String onEnd = ""; int endFired = -1;
+        public int getCount() { return items.length(); }
+        public Object getItem(int i) { return items.opt(i); }
+        public long getItemId(int i) { return i; }
+        public View getView(int i, View convert, ViewGroup parent) {
+            JSONObject it = items.optJSONObject(i);
+            View v = it == null ? new View(MainActivity.this) : build(it, LinearLayout.VERTICAL, "start");
+            v.setLayoutParams(new AbsListView.LayoutParams(-1, -2));
+            return v;
+        }
+    }
+
+    final VoltPlugin.Host pluginHost = new VoltPlugin.Host() {
+        public Activity activity() { return MainActivity.this; }
+        public String app() { return app; }
+        public void requestPermissions(String[] p, VoltPlugin.PermissionCallback cb) {
+            boolean all = true;
+            for (String x : p) all &= granted(x);
+            if (all) { cb.done(true); return; }
+            int rc = nextReq++; permCbs.put(rc, cb); MainActivity.this.requestPermissions(p, rc);
+        }
+        public void startForResult(Intent i, VoltPlugin.ActivityCallback cb) { int rc = nextReq++; actCbs.put(rc, cb); startActivityForResult(i, rc); }
+        public void emit(final String id, final Object value) { main.post(() -> send(event("native", id, value))); }
+        public void runOnUi(Runnable r) { main.post(r); }
+        public void runInBackground(Runnable r) { imgPool.execute(r); }
+    };
+
+    VoltPlugin plugin(String name) throws Exception {
+        if (pluginClasses == null) {
+            pluginClasses = new HashMap<>();
+            try {
+                JSONArray arr = new JSONArray(readAll(getAssets().open("plugins.json")));
+                for (int i = 0; i < arr.length(); i++) pluginClasses.put(arr.getJSONObject(i).getString("name"), arr.getJSONObject(i).getString("class"));
+            } catch (Exception ignored) {}
+        }
+        VoltPlugin p = plugins.get(name);
+        if (p != null) return p;
+        String cls = pluginClasses.get(name);
+        if (cls == null) throw new Exception("plugin '" + name + "' is not in this APK (rebuild it after adding native code)");
+        p = (VoltPlugin) Class.forName(cls).getDeclaredConstructor().newInstance();
+        plugins.put(name, p);
+        return p;
+    }
+
+    void callPlugin(JSONObject req) {
+        final String id = req.optString("id", req.optString("plugin") + "." + req.optString("method"));
+        final boolean[] done = {false};
+        VoltPlugin.Result res = new VoltPlugin.Result() {
+            public void ok(Object value) { if (done[0]) return; done[0] = true; result(id, value == null ? JSONObject.NULL : value); }
+            public void error(String m) { if (done[0]) return; done[0] = true; result(id, err(m)); }
+        };
+        try {
+            JSONObject args = req.optJSONObject("args");
+            plugin(req.optString("plugin")).call(pluginHost, req.optString("method"), args == null ? new JSONObject() : args, res);
+        } catch (Throwable t) { res.error(t.getClass().getSimpleName() + ": " + t.getMessage()); }
     }
 }

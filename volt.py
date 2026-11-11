@@ -11,7 +11,9 @@ RELEASES = os.path.join(DATA, "releases")
 RT, WEB, TPL, ANDROID = (os.path.join(ROOT, d) for d in ("runtimes", "web", "templates", "android"))
 BUILD = os.path.join(DATA, "build")
 LANGS = {".lua": (["lua"], "Lua"), ".py": ([sys.executable, "-u"], "Python"), ".php": (["php"], "PHP"), ".js": (["node"], "JavaScript"), ".rb": (["ruby"], "Ruby")}
-EFFECTS = ("_toast", "_open", "_vibrate", "_camera", "_pick", "_location", "_notify", "_share", "_clipboard", "_contact", "_store")
+EFFECTS = ("_toast", "_open", "_vibrate", "_camera", "_pick", "_location", "_notify", "_share", "_clipboard", "_contact", "_store", "_native", "_background")
+UPLOAD_DAYS = float(os.environ.get("VOLT_UPLOAD_DAYS", "30"))
+ABIS = [a for a in os.environ.get("VOLT_ABIS", "arm64-v8a,x86_64").split(",") if a]
 UPLOADS = os.path.join(DATA, "uploads")
 MAX_UPLOAD = int(os.environ.get("VOLT_MAX_UPLOAD_MB", "15")) * 1024 * 1024
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
@@ -49,6 +51,7 @@ class DB:
     CREATE TABLE IF NOT EXISTS sessions(app TEXT, ch TEXT, sid TEXT, state TEXT, updated INTEGER, PRIMARY KEY(app, ch, sid));
     CREATE TABLE IF NOT EXISTS releases(app TEXT, n INTEGER, created INTEGER, user TEXT, note TEXT, tests TEXT, PRIMARY KEY(app, n));
     CREATE TABLE IF NOT EXISTS deploys(app TEXT PRIMARY KEY, n INTEGER, at INTEGER, user TEXT);
+    CREATE TABLE IF NOT EXISTS pushes(id INTEGER PRIMARY KEY AUTOINCREMENT, app TEXT, ch TEXT, sid TEXT, title TEXT, text TEXT, tag TEXT, created INTEGER);
     CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, user TEXT, action TEXT, app TEXT, detail TEXT);
     """
 
@@ -248,8 +251,28 @@ class Runtime:
                 msg = str(r["error"]) if self.channel == "dev" else "Something went wrong. Please try again."
                 return {"ui": error_screen(msg + ("\n\n" + tail if tail else "")), "v": self.version}
             st, fx = split_effects(r.get("state"))
+            if isinstance(st, dict) and "_push" in st:
+                for m in (lambda x: x if isinstance(x, list) else [x])(st.pop("_push")):
+                    if isinstance(m, dict): queue_push(self.name, self.channel, m.get("to", "*"), m)
             db.q("INSERT OR REPLACE INTO sessions VALUES(?,?,?,?,?)", self.name, self.channel, sid, json.dumps(st), now())
         return {"ui": r.get("ui"), "fx": fx, "v": self.version}
+
+
+def queue_push(app, ch, sid, m):
+    db.q("INSERT INTO pushes(app,ch,sid,title,text,tag,created) VALUES(?,?,?,?,?,?,?)", app, ch, str(sid or "*")[:64],
+         str(m.get("title", ""))[:200], str(m.get("text", ""))[:1000], str(m.get("tag", ""))[:100], now())
+
+
+def clean_uploads():
+    if UPLOAD_DAYS <= 0 or not os.path.isdir(UPLOADS): return
+    cutoff = time.time() - UPLOAD_DAYS * 86400
+    for base, _, files in os.walk(UPLOADS):
+        for f in files:
+            p = os.path.join(base, f)
+            try:
+                if os.path.getmtime(p) < cutoff: os.remove(p)
+            except OSError: pass
+    db.q("DELETE FROM pushes WHERE created < ?", now() - 7 * 86400)
 
 
 def error_screen(msg):
@@ -322,8 +345,11 @@ def scan():
 
 
 def watcher():
+    last_clean = 0
     while True:
-        try: scan()
+        try:
+            scan()
+            if time.time() - last_clean > 3600: last_clean = time.time(); clean_uploads()
         except Exception as e: print("watch error:", e, file=sys.stderr)
         time.sleep(0.25)
 
@@ -416,7 +442,58 @@ def sdk_paths():
     bt = os.path.join(home, "build-tools", bts[-1])
     return {"aapt2": os.path.join(bt, "aapt2"), "d8": os.path.join(bt, "d8"), "zipalign": os.path.join(bt, "zipalign"),
             "apksigner": os.path.join(bt, "apksigner"), "lambda": os.path.join(bt, "core-lambda-stubs.jar"),
-            "jar": os.path.join(home, "platforms", plats[-1], "android.jar")}
+            "jar": os.path.join(home, "platforms", plats[-1], "android.jar"), "home": home}
+
+
+def ndk_root(sdk):
+    env = os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK_ROOT")
+    if env and os.path.isdir(env): return env
+    d = os.path.join(sdk["home"], "ndk")
+    vs = sorted(os.listdir(d)) if os.path.isdir(d) else []
+    return os.path.join(d, vs[-1]) if vs else None
+
+
+def kotlin_stdlib():
+    kc = shutil.which("kotlinc")
+    if not kc: return None
+    base = os.path.dirname(os.path.dirname(os.path.realpath(kc)))
+    for cand in (os.path.join(base, "lib", "kotlin-stdlib.jar"), os.path.join(base, "libexec", "lib", "kotlin-stdlib.jar")):
+        if os.path.exists(cand): return cand
+    return None
+
+
+def walk_ext(d, exts):
+    out = []
+    if d and os.path.isdir(d):
+        for base, dirs, files in os.walk(d):
+            dirs.sort()
+            out += [os.path.join(base, f) for f in sorted(files) if f.endswith(exts)]
+    return out
+
+
+def native_inputs(app_d):
+    nd = os.path.join(app_d, "native") if app_d else None
+    java, kt, jars = walk_ext(nd and os.path.join(nd, "java"), (".java",)), walk_ext(nd and os.path.join(nd, "kotlin"), (".kt",)), walk_ext(nd and os.path.join(nd, "libs"), (".jar",))
+    cunits = {}
+    cd = nd and os.path.join(nd, "c")
+    if cd and os.path.isdir(cd):
+        for e in sorted(os.listdir(cd)):
+            p = os.path.join(cd, e)
+            if e.endswith((".c", ".cpp")): cunits[os.path.splitext(e)[0]] = [p]
+            elif os.path.isdir(p): cunits[e] = walk_ext(p, (".c", ".cpp"))
+    pf = nd and os.path.join(nd, "permissions.txt")
+    perms = [l.strip() for l in open(pf) if l.strip() and not l.startswith("#")] if pf and os.path.exists(pf) else []
+    return java, kt, jars, cunits, perms
+
+
+def find_plugins(files):
+    out = []
+    for f in files:
+        src = open(f, encoding="utf-8").read()
+        pkg = re.search(r"^\s*package\s+([\w.]+)", src, re.M)
+        for cls in re.findall(r"class\s+(\w+)[^{]*?\bVoltPlugin\b", src):
+            out.append({"name": cls, "class": (pkg.group(1) + "." if pkg else "") + cls})
+    return out
 
 
 def sh(cmd):
@@ -428,17 +505,48 @@ def sh(cmd):
 build_lock = threading.Lock()
 
 
-def compile_dex(sdk):
-    src = sorted(os.path.join(d, f) for d, _, fs in os.walk(os.path.join(ANDROID, "src")) for f in fs if f.endswith(".java"))
-    h = hashlib.sha1(b"".join(open(f, "rb").read() for f in src) + sdk["jar"].encode()).hexdigest()[:12]
-    out = os.path.join(BUILD, "dex-" + h)
-    if os.path.exists(os.path.join(out, "classes.dex")): return os.path.join(out, "classes.dex")
-    cls = os.path.join(BUILD, "classes-" + h); shutil.rmtree(cls, ignore_errors=True); os.makedirs(cls); os.makedirs(out, exist_ok=True)
-    sh(["javac", "-nowarn", "-Xlint:-options", "-source", "8", "-target", "8", "-bootclasspath", sdk["jar"] + os.pathsep + sdk["lambda"], "-d", cls] + src)
-    classes = [os.path.join(d, f) for d, _, fs in os.walk(cls) for f in fs if f.endswith(".class")]
-    sh([sdk["d8"], "--release", "--min-api", "24", "--lib", sdk["jar"], "--output", out] + classes)
-    shutil.rmtree(cls, ignore_errors=True)
-    return os.path.join(out, "classes.dex")
+def compile_native(sdk, app_d=None):
+    core = walk_ext(os.path.join(ANDROID, "src"), (".java",))
+    java, kt, jars, cunits, perms = native_inputs(app_d)
+    every = core + java + kt + jars + [f for fs in cunits.values() for f in fs]
+    h = hashlib.sha1(b"".join(f.encode() + open(f, "rb").read() for f in every) + (sdk["jar"] + ",".join(ABIS) + str(perms)).encode()).hexdigest()[:16]
+    out = os.path.join(BUILD, "native-" + h)
+    done = os.path.join(out, "done.json")
+    if os.path.exists(done): return json.load(open(done))
+    shutil.rmtree(out, ignore_errors=True)
+    cls, kcls, dexd = (os.path.join(out, x) for x in ("classes", "kclasses", "dex"))
+    for x in (cls, kcls, dexd): os.makedirs(x)
+    cp = os.pathsep.join([sdk["jar"]] + jars)
+    sh(["javac", "-nowarn", "-Xlint:-options", "-encoding", "UTF-8", "-source", "8", "-target", "8", "-bootclasspath", sdk["jar"] + os.pathsep + sdk["lambda"],
+        "-cp", os.pathsep.join(jars) or ".", "-d", cls] + core + java)
+    inputs = [os.path.join(d, f) for d, _, fs in os.walk(cls) for f in fs if f.endswith(".class")] + jars
+    if kt:
+        if not shutil.which("kotlinc"): raise RuntimeError("Kotlin plugins need kotlinc on PATH")
+        sh(["kotlinc", "-nowarn", "-jvm-target", "1.8", "-cp", cp + os.pathsep + cls, "-d", kcls] + kt)
+        inputs += [os.path.join(d, f) for d, _, fs in os.walk(kcls) for f in fs if f.endswith(".class")]
+        std = kotlin_stdlib()
+        if std: inputs.append(std)
+    sh([sdk["d8"], "--release", "--min-api", "24", "--lib", sdk["jar"], "--output", dexd] + inputs)
+    sos, warnings = [], []
+    if cunits:
+        ndk = ndk_root(sdk)
+        if not ndk:
+            warnings.append("C sources skipped: Android NDK not found (install it or set ANDROID_NDK_HOME)")
+        else:
+            host = "darwin-x86_64" if sys.platform == "darwin" else "linux-x86_64"
+            triples = {"arm64-v8a": "aarch64-linux-android", "x86_64": "x86_64-linux-android", "armeabi-v7a": "armv7a-linux-androideabi", "x86": "i686-linux-android"}
+            for abi in ABIS:
+                cc = os.path.join(ndk, "toolchains", "llvm", "prebuilt", host, "bin", triples[abi] + "24-clang")
+                os.makedirs(os.path.join(out, "lib", abi), exist_ok=True)
+                for lib, files in cunits.items():
+                    so = os.path.join(out, "lib", abi, "lib%s.so" % lib)
+                    cpp = any(f.endswith(".cpp") for f in files)
+                    sh([cc + ("++" if cpp else ""), "-shared", "-fPIC", "-O2", "-Wall", "-o", so] + files + ["-llog"] + (["-static-libstdc++"] if cpp else []))
+                    sos.append([abi, so])
+    res = {"dex": sorted(os.path.join(dexd, f) for f in os.listdir(dexd) if f.endswith(".dex")), "so": sos,
+           "plugins": find_plugins(java + kt), "perms": perms, "warnings": warnings}
+    json.dump(res, open(done, "w"))
+    return res
 
 
 def keystore():
@@ -458,20 +566,24 @@ def xml_escape(s):
 def build_apk(app, server, label=None, out=None, channel="prod"):
     with build_lock:
         os.makedirs(BUILD, exist_ok=True)
-        sdk = sdk_paths(); dex = compile_dex(sdk)
+        sdk = sdk_paths(); nat = compile_native(sdk, app_dir(app) if app else None)
+        for w in nat["warnings"]: print("⚠", w, file=sys.stderr)
         pkg = "dev.volt.player" if not app else "dev.volt.app." + (re.sub(r"[^a-z0-9]", "", app) or "x") + ("" if channel == "prod" else "." + channel)
         label = label or ((app.replace("-", " ").title() + ("" if channel == "prod" else " (dev)")) if app else "VoltForge")
         out = out or os.path.join(BUILD, "%s-%s.apk" % (app or "voltforge-player", channel))
         with tempfile.TemporaryDirectory() as tmp:
-            man = open(os.path.join(ANDROID, "AndroidManifest.xml")).read().replace("{{PKG}}", pkg).replace("{{LABEL}}", xml_escape(label))
+            man = open(os.path.join(ANDROID, "AndroidManifest.xml")).read().replace("{{PKG}}", pkg).replace("{{LABEL}}", xml_escape(label)).replace("{{PERMS}}", "\n    ".join('<uses-permission android:name="%s" />' % xml_escape(p) for p in nat["perms"]))
             open(os.path.join(tmp, "AndroidManifest.xml"), "w").write(man)
             os.makedirs(os.path.join(tmp, "assets"))
             json.dump({"server": server.rstrip("/"), "app": app or "", "channel": channel, "token": DEVICE_KEY}, open(os.path.join(tmp, "assets", "volt.json"), "w"))
+            json.dump(nat["plugins"], open(os.path.join(tmp, "assets", "plugins.json"), "w"))
             sh([sdk["aapt2"], "compile", "--dir", os.path.join(ANDROID, "res"), "-o", os.path.join(tmp, "res.zip")])
             un = os.path.join(tmp, "un.apk")
             sh([sdk["aapt2"], "link", "-o", un, "-I", sdk["jar"], "--manifest", os.path.join(tmp, "AndroidManifest.xml"), "--min-sdk-version", "24",
                 "--target-sdk-version", "34", "--version-code", str(now() // 60), "--version-name", "1.0", "-A", os.path.join(tmp, "assets"), os.path.join(tmp, "res.zip")])
-            with zipfile.ZipFile(un, "a") as z: z.write(dex, "classes.dex")
+            with zipfile.ZipFile(un, "a", zipfile.ZIP_DEFLATED) as z:
+                for i, dx in enumerate(nat["dex"]): z.write(dx, "classes.dex" if i == 0 else "classes%d.dex" % (i + 1))
+                for abi, so in nat["so"]: z.write(so, "lib/%s/%s" % (abi, os.path.basename(so)))
             al = os.path.join(tmp, "al.apk")
             sh([sdk["zipalign"], "-p", "-f", "4", un, al])
             ks, pw = keystore()
@@ -644,6 +756,18 @@ class H(BaseHTTPRequestHandler):
             os.makedirs(os.path.join(UPLOADS, name), exist_ok=True)
             with open(os.path.join(UPLOADS, name, fname), "wb") as fh: fh.write(data)
             return self.send(201, {"url": "/uploads/%s/%s" % (name, fname), "type": ctype, "size": n, "name": q.get("name", [fname])[0][:200]})
+        if r == "inbox" and m == "GET":
+            self.device()
+            since, sid = int(q.get("since", ["0"])[0]), q.get("session", [""])[0]
+            top = db.one("SELECT MAX(id) FROM pushes WHERE app=? AND ch=?", name, ch)[0] or 0
+            if since <= 0: return self.send(200, {"messages": [], "cursor": top})
+            rows = db.q("SELECT id, title, text, tag FROM pushes WHERE app=? AND ch=? AND id>? AND (sid='*' OR sid=?) ORDER BY id LIMIT 20", name, ch, since, sid)
+            return self.send(200, {"messages": [dict(zip(("id", "title", "text", "tag"), x)) for x in rows], "cursor": rows[-1][0] if rows else max(since, top)})
+        if r == "push" and m == "POST":
+            user = self.need("developer"); b = self.body()
+            if not b.get("text") and not b.get("title"): raise Api(400, "title or text required")
+            queue_push(name, b.get("ch", "prod") if b.get("ch") in CHANNELS else "prod", b.get("session") or "*", b)
+            audit(user, "push", name, "%s → %s: %s" % (b.get("ch", "prod"), b.get("session") or "all", b.get("title", ""))); return self.send(201, {"ok": True})
         if r in ("run", "watch", "reset"):
             self.device()
             rt = get_rt(name, ch)

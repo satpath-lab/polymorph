@@ -11,6 +11,7 @@ You write three small functions in any of those languages. VoltForge runs your s
 - 🧑‍💻 **Web IDE**: code editor, interactive phone preview, live logs, one-click **Build APK**
 - 📦 **Signed APKs** with no Gradle and no Android Studio, built straight from the SDK tools
 - 🪶 **Zero dependencies**: the server is one Python file that uses only the standard library
+- 🧩 **Native plugins** in Java, Kotlin, C/C++ or any .jar, callable from every script language
 - 🏢 **Built for teams**: roles, audit log, test-gated releases, instant deploy and rollback, CI/CD, Docker, metrics
 
 ## Quick start
@@ -80,6 +81,54 @@ Also on the phone:
 - **Animated screen changes:** give each screen a `route`. When the route changes, the new screen slides in, and in from the left when the user went back.
 
 The web preview fakes all of these: a file chooser stands in for the camera, it uses the browser's geolocation and notifications, and the contact picker returns a sample contact. See `apps/field-kit` for a demo that uses every feature, with tests.
+
+### Big lists
+
+`{type: "list", id: "feed", items: [...], onEnd: "more", gap: 8}` renders with Android's recycling `ListView`. Only the visible rows exist, so thousands of rows scroll smoothly. When the user reaches the end, `onEnd` is sent as a tap event so you can load more, and the scroll position is kept across updates. Use it on a screen with `scroll: false`; the list then fills the remaining space. On a scrolling screen it falls back to a plain column.
+
+### Background jobs and server push (no Firebase)
+
+- `_background = {every: 15}` schedules a periodic job (Android's minimum is 15 minutes) that runs even when the app is closed or after a reboot. Each run sends your script `{type: "background"}`, and any `_notify` / `_store` it returns is applied on the phone. `_background = {on: false}` cancels it.
+- **Push:** from the IDE's Push tab, `POST /api/push/<app> {title, text, ch, session?}` (CI and backends with an API token), or from any script with `_push = {to: "*" | sessionId, title, text}`. Messages reach installed apps as notifications within seconds while the app is open, and on the next background run while it is closed.
+
+## Native plugins (Java, Kotlin, C/C++, any .jar)
+
+Anything the scripts can't do, you write natively and call from any language:
+
+```
+apps/<app>/native/
+  java/com/acme/Torch.java     class Torch implements dev.volt.player.VoltPlugin
+  kotlin/Battery.kt            class Battery : VoltPlugin
+  c/fasthash.c                 JNI → libfasthash.so (one .c = one library; a folder = one library)
+  libs/zxing-core.jar          third-party jars (e.g. QR scanning, crypto, SDKs)
+  permissions.txt              extra manifest permissions, one per line
+```
+
+```java
+public class Torch implements VoltPlugin {
+    public void call(Host host, String method, JSONObject args, Result result) throws Exception {
+        CameraManager cm = (CameraManager) host.activity().getSystemService(Context.CAMERA_SERVICE);
+        cm.setTorchMode(cm.getCameraIdList()[0], method.equals("on"));
+        result.ok(new JSONObject().put("on", method.equals("on")));
+    }
+}
+```
+
+```lua
+s._native = {plugin = "Torch", method = "on", id = "torch", args = {}}   -- result arrives as {type="result", id="torch", value={on=true}}
+```
+
+`Host` gives a plugin the `activity()`, `requestPermissions(perms, cb)`, `startForResult(intent, cb)`, `emit(id, value)` for streams (sent as `{type: "native", id, value}` events, e.g. sensor readings), and `runOnUi` / `runInBackground`. Plugins are found automatically by scanning for classes that implement `VoltPlugin`.
+
+**Build:** Java uses `javac`. Kotlin uses `kotlinc`, and the Kotlin standard library is bundled automatically. Each C/C++ file is compiled with the Android NDK for `VOLT_ABIS` (default `arm64-v8a,x86_64`); without the NDK, C files are skipped with a warning. Everything is turned into Android bytecode with `d8`. Builds are cached by content hash.
+
+Native code ships in the APK, so changing it needs a new APK build. Scripts stay live-editable as before. The `apps/native-demo` app shows each kind:
+- flashlight (Java)
+- battery (Kotlin)
+- FNV-1a hashing (C via JNI)
+- live accelerometer stream (Java + `emit`)
+- Bluetooth LE scan (Java + runtime permissions)
+- background job and a 1,000+ row infinite list
 
 **Screen:** `title`, `accent`, `bg`, `body`, `route`, `scroll` (default true), `hideBar`, `back` (the event id sent when the user presses the system back button)
 
@@ -171,6 +220,9 @@ Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs
 | `VOLT_DEVICE_KEY` | – | shared key baked into APKs. Without it, run/watch calls are rejected |
 | `VOLT_SESSION_DAYS` | 14 | IDE login lifetime |
 | `VOLT_MAX_UPLOAD_MB` | 15 | maximum size of a camera or file upload |
+| `VOLT_UPLOAD_DAYS` | 30 | delete uploads older than this (0 = never) |
+| `VOLT_ABIS` | `arm64-v8a,x86_64` | CPU architectures to compile C/C++ plugins for |
+| `ANDROID_NDK_HOME` | auto | NDK location for C/C++ plugins |
 | `VOLT_APP_*` | – | passed to scripts (secrets, API URLs). All other server env vars are hidden from scripts |
 | `VOLT_KEYSTORE` / `VOLT_KEYSTORE_PASS` | generated | your release signing key for APKs |
 | `ANDROID_HOME` | auto | only needed for building APKs (JDK + build-tools + a platform) |
@@ -184,8 +236,9 @@ Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs
 - Scripts run as separate processes with a scrubbed environment and timeouts, but they are **not sandboxed** from the host filesystem. Treat app authors as trusted, and use the container setup for isolation.
 - State lives in SQLite on a single node. Scale vertically or shard apps across nodes. Running several replicas of one app needs a shared state store, which is not built in yet.
 - App logic runs on the server. Offline, the app shows the last cached screen but taps need the network.
-- Not built in yet: push notifications from the server while the app is closed (needs Firebase; scheduled local reminders do work), background jobs, Bluetooth/NFC, a QR scanner, and recycled lists for very large datasets.
-- Uploads are stored in `data/uploads/` under unguessable names and are never deleted automatically. Add your own retention policy.
+- Push without Firebase is polling-based. Delivery to a closed app waits for the next background run (Android allows one every 15 minutes or more), so it is not instant like FCM. For instant delivery, add the Firebase SDK as a plugin jar.
+- Not built in, but available through plugins: NFC, QR scanning (drop a ZXing jar into `native/libs`), payments, maps SDKs and other vendor SDKs.
+- Uploads are stored in `data/uploads/` under unguessable names and deleted after `VOLT_UPLOAD_DAYS` (default 30; `0` keeps them forever).
 
 ## How it works
 

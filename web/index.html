@@ -82,7 +82,7 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
     <div class="bar"><b id="fname">—</b><span class="grow"></span><span class="pill" id="save">saved</span></div>
     <div id="edwrap"><textarea id="fallback" spellcheck="false"></textarea></div>
     <div class="tabs" id="tabs">
-      <button data-p="logs" class="on">Logs</button><button data-p="tests">Tests</button><button data-p="releases">Releases</button><button data-p="audit">Audit</button><button data-p="users" class="admin-only">Users &amp; tokens</button>
+      <button data-p="logs" class="on">Logs</button><button data-p="tests">Tests</button><button data-p="releases">Releases</button><button data-p="push">Push</button><button data-p="audit">Audit</button><button data-p="users" class="admin-only">Users &amp; tokens</button>
     </div>
     <div class="pane on" id="p-logs"><div id="logs"></div></div>
     <div class="pane" id="p-tests"><div class="row"><button class="pri dev-only" id="runtests">▶ Run tests</button><span class="mute">Cases live in <code>tests/*.json</code>. A release is blocked unless every case passes.</span></div><div id="testout"></div></div>
@@ -90,6 +90,10 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
       <div class="row dev-only"><input id="relnote" placeholder="Release note" style="flex:1"><button class="pri" id="mkrel">Create release</button>
         <label class="admin-only mute"><input type="checkbox" id="reldeploy"> deploy now</label><label class="admin-only mute"><input type="checkbox" id="relforce"> force</label></div>
       <div id="rellist"></div>
+    </div>
+    <div class="pane" id="p-push">
+      <div class="row dev-only"><input id="ptitle" placeholder="Title"><input id="ptext" placeholder="Message" style="flex:1"><select id="pch"><option>prod</option><option>dev</option></select><input id="psid" placeholder="session (blank = everyone)"><button class="pri" id="psend">Send push</button></div>
+      <p class="mute">Delivered as a notification to installed apps, including closed ones (when their background check runs, or within seconds while open). Scripts can also send pushes with <code>_push = {to = "*"|sessionId, title, text}</code>.</p>
     </div>
     <div class="pane" id="p-audit"><div id="auditlist"></div></div>
     <div class="pane" id="p-users">
@@ -119,7 +123,7 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const MODES = { lua: 'lua', py: 'python', php: 'application/x-httpd-php', js: 'javascript', json: { name: 'javascript', json: true }, rb: 'ruby', md: null, txt: null };
+const MODES = { lua: 'lua', py: 'python', php: 'application/x-httpd-php', js: 'javascript', json: { name: 'javascript', json: true }, rb: 'ruby', md: null, txt: null, java: 'text/x-java', kt: 'text/x-kotlin', c: 'text/x-csrc', cpp: 'text/x-c++src', h: 'text/x-csrc' };
 const RANK = { viewer: 1, developer: 2, admin: 3 };
 let token = localStorage.getItem('volt_token') || '', me = null;
 let sid = localStorage.getItem('volt_sid') || (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
@@ -164,7 +168,8 @@ async function save() {
   clearTimeout(saveT); if (!cur || !curFile || !can('developer')) return;
   try {
     const r = await api(`/api/file/${cur}?path=${encodeURIComponent(curFile)}`, { method: 'PUT', body: JSON.stringify({ code: ed.getValue(), audit: false }) });
-    $('#save').textContent = 'live in dev ⚡ v' + r.v; $('#save').className = 'pill ok';
+    if (curFile.startsWith('native/')) { $('#save').textContent = 'saved · native code ships in the next APK build'; $('#save').className = 'pill warn'; }
+    else { $('#save').textContent = 'live in dev ⚡ v' + r.v; $('#save').className = 'pill ok'; }
   } catch (e) { $('#save').textContent = 'save failed: ' + e.message; $('#save').className = 'pill bad'; }
 }
 
@@ -299,6 +304,11 @@ function showTests(t) {
   $('#testout').innerHTML = !t.results.length ? '<p class="mute">No tests found. Add JSON cases under tests/.</p>' :
     t.results.map(x => `<div class="${x.ok ? 'ok' : 'bad'}">${x.ok ? '✔' : '✖'} ${esc(x.name)}${x.ok ? '' : `<div class="mute" style="margin-left:18px">${esc(x.error)}</div>`}</div>`).join('');
 }
+$('#psend').onclick = async () => {
+  if (!cur) return;
+  try { await api('/api/push/' + cur, { method: 'POST', body: JSON.stringify({ title: $('#ptitle').value, text: $('#ptext').value, ch: $('#pch').value, session: $('#psid').value.trim() || undefined }) }); toast('Push queued'); $('#ptext').value = ''; }
+  catch (e) { alert(e.message); }
+};
 $('#runtests').onclick = async () => { $('#testout').textContent = 'running…'; try { showTests(await api('/api/test/' + cur, { method: 'POST' })); } catch (e) { $('#testout').textContent = e.message; } };
 $('#mkrel').onclick = async () => {
   if (!cur) return;
@@ -355,13 +365,18 @@ function nativeFx(fx) {
   if (fx.share) { if (navigator.share) navigator.share({ text: fx.share }).catch(() => {}); else { navigator.clipboard && navigator.clipboard.writeText(fx.share); toast('📤 preview: share text copied'); } }
   if (fx.clipboard) navigator.clipboard && navigator.clipboard.writeText(fx.clipboard).catch(() => {});
   if (fx.contact) { toast('👤 preview: sample contact'); setTimeout(() => result(fx.contact, { name: 'Ada Lovelace', phone: '+1 555 0100' }), 300); }
+  if (fx.native) [].concat(fx.native).forEach(n => {
+    toast(`🧩 ${n.plugin}.${n.method}() runs only on the phone`);
+    setTimeout(() => result(n.id || n.plugin + '.' + n.method, { error: 'native plugins run on the device only (preview)' }), 300);
+  });
+  if (fx.background) toast(fx.background.on === false ? '⏱ background job cancelled' : `⏱ background job every ${Math.max(15, fx.background.every || 15)} min (on device)`);
   if (fx.store && typeof fx.store === 'object') {
     const st = devStore(); for (const k in fx.store) { if (fx.store[k] === null) delete st[k]; else st[k] = fx.store[k]; }
     try { localStorage.setItem('volt_store:' + cur, JSON.stringify(st)); } catch (e) {}
   }
 }
 
-let lastRoute = null, goingBack = false;
+let lastRoute = null, goingBack = false; const listScroll = {};
 function setStatus(ok, msg) { const s = $('#status'); s.textContent = ok ? 'live' : msg || 'offline'; s.className = 'pill ' + (ok ? 'ok' : 'bad'); }
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2000); }
 
@@ -392,6 +407,8 @@ function render(s) {
   if (lastRoute !== null && route !== lastRoute) c.animate([{ transform: `translateX(${goingBack ? -60 : 60}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 200, easing: 'ease-out' });
   lastRoute = route; goingBack = false;
   c.style.overflow = s.scroll === false ? 'hidden' : 'auto';
+  c.style.display = s.scroll === false ? 'flex' : ''; c.style.flexDirection = 'column';
+  if (s.scroll === false) { node.style.flex = '1 1 0'; node.style.minHeight = '0'; }
 }
 
 const px = v => typeof v === 'number' ? v + 'px' : v;
@@ -442,6 +459,19 @@ function build(n, parent, palign, used) {
     const src = n.src || ''; el.src = /^https?:/.test(src) ? src : src.startsWith('/') ? src : `/apps/${cur}/assets/${src}?ch=${chan}`;
     Object.assign(el.style, { objectFit: n.fit === 'contain' ? 'contain' : 'cover', borderRadius: px(n.radius ?? 12), background: n.bg || '#e5e7eb', height: '180px', display: 'block', minWidth: 0 });
     if (parent === 'row') el.style.width = '120px';
+  } else if (t === 'list') {
+    el = document.createElement('div');
+    Object.assign(el.style, { display: 'flex', flexDirection: 'column', gap: px(n.gap ?? 8), overflowY: 'auto', flex: '1 1 0', minHeight: '0' });
+    (n.items || []).forEach(it => { if (it && typeof it === 'object') el.appendChild(build(it, 'col', 'start', used)); });
+    if (n.onEnd) {
+      const key = 'list:' + id; const prev = listScroll[key];
+      if (prev) requestAnimationFrame(() => el.scrollTop = prev.top);
+      el.addEventListener('scroll', () => {
+        listScroll[key] = { top: el.scrollTop };
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40 && el._fired !== n.items.length) { el._fired = n.items.length; run(ev('tap', n.onEnd)); }
+      });
+    }
+    applyBox(el, n, parent, palign); return el;
   } else if (t === 'spacer') {
     el = document.createElement('div'); el.style[parent === 'row' ? 'width' : 'height'] = px(n.size || 0); el.style.flex = 'none';
   } else if (t === 'divider') {

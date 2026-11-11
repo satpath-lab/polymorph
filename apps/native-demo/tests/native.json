@@ -1,0 +1,17 @@
+[
+  {
+    "name": "plugin calls and results",
+    "steps": [
+      { "event": null, "expect": { "ui.title": "Native Demo" } },
+      { "event": { "type": "tap", "id": "torch", "inputs": {} }, "expect": { "fx.native.plugin": "Torch", "fx.native.method": "on" } },
+      { "event": { "type": "result", "id": "torch", "value": { "on": true }, "inputs": {} }, "expect": { "state.torch": true } },
+      { "event": { "type": "result", "id": "battery", "value": { "percent": 80, "charging": true, "celsius": 25 }, "inputs": {} }, "expect": { "state.battery.percent": 80 } },
+      { "event": { "type": "native", "id": "motion", "value": { "x": 1, "y": 2, "z": 9.81 }, "inputs": {} }, "expect": { "state.motion.z": 9.81 } },
+      { "event": { "type": "result", "id": "hash", "value": { "error": "no lib" }, "inputs": {} }, "expect": { "fx.toast": "hash: no lib" } },
+      { "event": { "type": "tap", "id": "bg", "value": true, "inputs": {} }, "expect": { "fx.background.every": 15 } },
+      { "event": { "type": "background", "id": "background", "inputs": {} }, "expect": { "state.bg_runs": 1, "fx.notify.tag": "bg" } },
+      { "event": { "type": "tap", "id": "feed", "inputs": {} }, "expect": { "ui.scroll": false, "ui.body.children.1.type": "list" } },
+      { "event": { "type": "tap", "id": "more", "inputs": {} }, "expect": { "state.count": 200 } }
+    ]
+  }
+]
