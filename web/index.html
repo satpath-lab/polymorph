@@ -228,6 +228,7 @@ async function run(ev) {
     if (fx.toast) toast(fx.toast);
     if (fx.open) window.open(fx.open, '_blank');
     if (fx.vibrate) $('#screen').animate([{ transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'none' }], { duration: 120, iterations: 2 });
+    nativeFx(fx);
     setStatus(true);
   } catch (e) { setStatus(false, e.message); }
 }
@@ -322,12 +323,52 @@ document.querySelectorAll('#chan button').forEach(b => b.onclick = () => {
   ver = -1; logAfter = 0; $('#logs').innerHTML = ''; for (const k in inputEls) delete inputEls[k]; run(null); watch();
 });
 
+function devStore() { try { return JSON.parse(localStorage.getItem('volt_store:' + cur) || '{}'); } catch (e) { return {}; } }
+const result = (id, value) => run(ev('result', id, value));
+function pickFile(id, accept) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept;
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return result(id, { error: 'cancelled' });
+    try {
+      const r = await fetch(`/api/upload/${cur}?ch=${chan}&name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f, headers: Object.assign({ 'Content-Type': f.type || 'application/octet-stream' }, token ? { 'X-Volt-Token': token } : {}) });
+      const j = await r.json(); result(id, r.ok ? j : { error: j.error || 'upload failed' });
+    } catch (e) { result(id, { error: e.message }); }
+  };
+  inp.addEventListener('cancel', () => result(id, { error: 'cancelled' }));
+  inp.click();
+}
+function nativeFx(fx) {
+  if (fx.camera) { toast('📷 preview: choose an image to stand in for the camera'); pickFile(fx.camera, 'image/*'); }
+  if (fx.pick) { const p = typeof fx.pick === 'object' ? fx.pick : { id: String(fx.pick) }; pickFile(p.id || 'pick', (p.type || 'image') === 'image' ? 'image/*' : p.type === 'any' ? '' : p.type); }
+  if (fx.location) {
+    const id = fx.location;
+    if (!navigator.geolocation) result(id, { error: 'unavailable' });
+    else navigator.geolocation.getCurrentPosition(p => result(id, { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, time: p.timestamp }),
+      e => result(id, { error: e.code === 1 ? 'denied' : 'timeout' }), { timeout: 15000 });
+  }
+  if (fx.notify) [].concat(fx.notify).forEach(n => {
+    n = typeof n === 'object' ? n : { text: String(n) };
+    const fire = () => { toast('🔔 ' + (n.title ? n.title + ': ' : '') + (n.text || '')); if (window.Notification && Notification.permission === 'granted') new Notification(n.title || cur, { body: n.text || '' }).onclick = () => { window.focus(); run(ev('notification', n.tag || '')); }; };
+    if (window.Notification && Notification.permission === 'default') Notification.requestPermission();
+    n.at > 0 ? setTimeout(fire, n.at * 1000) : fire();
+  });
+  if (fx.share) { if (navigator.share) navigator.share({ text: fx.share }).catch(() => {}); else { navigator.clipboard && navigator.clipboard.writeText(fx.share); toast('📤 preview: share text copied'); } }
+  if (fx.clipboard) navigator.clipboard && navigator.clipboard.writeText(fx.clipboard).catch(() => {});
+  if (fx.contact) { toast('👤 preview: sample contact'); setTimeout(() => result(fx.contact, { name: 'Ada Lovelace', phone: '+1 555 0100' }), 300); }
+  if (fx.store && typeof fx.store === 'object') {
+    const st = devStore(); for (const k in fx.store) { if (fx.store[k] === null) delete st[k]; else st[k] = fx.store[k]; }
+    try { localStorage.setItem('volt_store:' + cur, JSON.stringify(st)); } catch (e) {}
+  }
+}
+
+let lastRoute = null, goingBack = false;
 function setStatus(ok, msg) { const s = $('#status'); s.textContent = ok ? 'live' : msg || 'offline'; s.className = 'pill ' + (ok ? 'ok' : 'bad'); }
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2000); }
 
 function ev(type, id, value) {
   const inp = {}; for (const k in inputs) { inp[k] = inputs[k]; lastVal[k] = inputs[k]; }
-  const e = { type, id: id || '', inputs: inp }; if (value !== undefined) e.value = value; return e;
+  const e = { type, id: id || '', inputs: inp, store: devStore(), device: { platform: 'web-preview', lang: navigator.language, dark: matchMedia('(prefers-color-scheme: dark)').matches, width: 336, height: 620 } };
+  if (value !== undefined) e.value = value; return e;
 }
 
 function shade(hex, f) {
@@ -347,6 +388,9 @@ function render(s) {
   const node = s.body ? build(s.body, 'col', 'start', used) : document.createElement('div');
   for (const k in inputEls) if (!used.has(k)) { delete inputEls[k]; delete inputs[k]; delete lastVal[k]; }
   c.replaceChildren(node); c.scrollTop = y;
+  const route = s.route || '';
+  if (lastRoute !== null && route !== lastRoute) c.animate([{ transform: `translateX(${goingBack ? -60 : 60}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 200, easing: 'ease-out' });
+  lastRoute = route; goingBack = false;
   c.style.overflow = s.scroll === false ? 'hidden' : 'auto';
 }
 
@@ -440,7 +484,7 @@ $('#apkbtn').onclick = () => {
   $('#hint').textContent = 'Building APK…'; location.href = `/api/apk/${cur}?${q}`;
   setTimeout(() => $('#hint').textContent = 'A prod APK runs only deployed releases. A dev APK follows every save.', 4000);
 };
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && backId && document.activeElement === document.body) run(ev('tap', backId)); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && backId && document.activeElement === document.body) { goingBack = true; run(ev('tap', backId)); } });
 
 async function boot(quiet) {
   try {

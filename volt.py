@@ -11,7 +11,9 @@ RELEASES = os.path.join(DATA, "releases")
 RT, WEB, TPL, ANDROID = (os.path.join(ROOT, d) for d in ("runtimes", "web", "templates", "android"))
 BUILD = os.path.join(DATA, "build")
 LANGS = {".lua": (["lua"], "Lua"), ".py": ([sys.executable, "-u"], "Python"), ".php": (["php"], "PHP"), ".js": (["node"], "JavaScript"), ".rb": (["ruby"], "Ruby")}
-EFFECTS = ("_toast", "_open", "_vibrate")
+EFFECTS = ("_toast", "_open", "_vibrate", "_camera", "_pick", "_location", "_notify", "_share", "_clipboard", "_contact", "_store")
+UPLOADS = os.path.join(DATA, "uploads")
+MAX_UPLOAD = int(os.environ.get("VOLT_MAX_UPLOAD_MB", "15")) * 1024 * 1024
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 ROLES = {"viewer": 1, "developer": 2, "admin": 3}
 CHANNELS = ("dev", "prod")
@@ -570,6 +572,12 @@ class H(BaseHTTPRequestHandler):
             db.one("SELECT 1"); return self.send(200, {"ok": True, "apps": len(list_apps())})
         if p == ["metrics"]:
             self.need("viewer"); return self.send(200, metrics(), "text/plain")
+        if p[:1] == ["uploads"] and len(p) == 3 and NAME_RE.match(p[1]) and re.match(r"^[a-f0-9]{32}\.[a-z0-9]{1,5}$", p[2]):
+            f = os.path.join(UPLOADS, p[1], p[2])
+            if not os.path.isfile(f): raise Api(404, "not found")
+            ext = p[2].rsplit(".", 1)[1]
+            ct = {"jpg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp", "pdf": "application/pdf", "txt": "text/plain"}.get(ext, "application/octet-stream")
+            return self.send(200, open(f, "rb").read(), ct, {"Cache-Control": "private, max-age=86400", "Content-Disposition": "inline" if ct.startswith("image") else "attachment"})
         if p[:1] == ["apps"] and len(p) >= 4 and p[2] == "assets":
             rt = get_rt(p[1], ch)
             if not rt or not rt.dir: raise Api(404, "not found")
@@ -624,6 +632,18 @@ class H(BaseHTTPRequestHandler):
             scan(); audit(user, "app.create", n, ext); return self.send(201, {"name": n})
 
         if not NAME_RE.match(name): raise Api(404, "unknown app")
+        if r == "upload" and m == "POST":
+            self.device()
+            if not get_rt(name, ch): raise Api(404, "unknown app")
+            n = int(self.headers.get("Content-Length") or 0)
+            if n <= 0 or n > MAX_UPLOAD: raise Api(413, "upload must be 1 byte – %d MB" % (MAX_UPLOAD // 1048576))
+            data = self.rfile.read(n)
+            ctype = (self.headers.get("Content-Type") or "application/octet-stream").split(";")[0].strip().lower()
+            ext = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "application/pdf": "pdf", "text/plain": "txt"}.get(ctype, "bin")
+            fname = secrets.token_hex(16) + "." + ext
+            os.makedirs(os.path.join(UPLOADS, name), exist_ok=True)
+            with open(os.path.join(UPLOADS, name, fname), "wb") as fh: fh.write(data)
+            return self.send(201, {"url": "/uploads/%s/%s" % (name, fname), "type": ctype, "size": n, "name": q.get("name", [fname])[0][:200]})
         if r in ("run", "watch", "reset"):
             self.device()
             rt = get_rt(name, ch)

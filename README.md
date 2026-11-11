@@ -56,10 +56,32 @@ end
 
 **Event:** `{type: "tap"|"change"|"submit", id, value, inputs: {<inputId>: text}}`
 
-**Side effects:** set these keys on the state you return and they run once on the phone:
-`_toast = "msg"`, `_vibrate = 40`, `_open = "https://…"`
+**Event:** also includes `store` (this device's saved data) and `device` (`platform`, `sdk`, `model`, `brand`, `lang`, `dark`, `width`, `height`).
 
-**Screen:** `title`, `accent`, `bg`, `body`, `scroll` (default true), `hideBar`, `back` (the event id sent when the user presses the system back button)
+### Native device features
+
+Set any of these keys on the state you return. The phone performs the action once. Anything that produces a value sends back an event `{type: "result", id, value}`, where `value` is either the data or `{error: "cancelled" | "denied" | ...}`. Runtime permissions are requested automatically.
+
+| effect | what happens | result `value` |
+|---|---|---|
+| `_camera = "id"` | opens the camera; the photo is downscaled to ≤1600 px, rotated upright, and uploaded | `{url, type, size, name}`. Show it with `{type: "image", src: url}` |
+| `_pick = {id, type}` | opens the system picker; `type` is `"image"`, `"any"` or a MIME type; the file is uploaded | `{url, type, size, name}` |
+| `_location = "id"` | gets a GPS or network fix (asks permission, 15 s timeout) | `{lat, lng, accuracy, time}` |
+| `_notify = {title, text, tag, at}` | shows a notification now, or `at` seconds later, even if the app is closed. A list sends several | tapping it sends `{type: "notification", id: tag}` |
+| `_contact = "id"` | opens the contact picker (no contacts permission needed) | `{name, phone}` |
+| `_share = "text"` | opens the system share sheet | – |
+| `_clipboard = "text"` | copies to the clipboard | – |
+| `_store = {key: value}` | saves values on the device (`null` deletes a key). They arrive in every event as `event.store` | – |
+| `_open = "url"` | opens a URL or link: `https:`, `tel:`, `sms:`, `mailto:`, `geo:` | – |
+| `_toast`, `_vibrate` | short message / vibration in ms | – |
+
+Also on the phone:
+- **Offline start:** the last screen is cached, so the app opens instantly and still shows something with no network.
+- **Animated screen changes:** give each screen a `route`. When the route changes, the new screen slides in, and in from the left when the user went back.
+
+The web preview fakes all of these: a file chooser stands in for the camera, it uses the browser's geolocation and notifications, and the contact picker returns a sample contact. See `apps/field-kit` for a demo that uses every feature, with tests.
+
+**Screen:** `title`, `accent`, `bg`, `body`, `route`, `scroll` (default true), `hideBar`, `back` (the event id sent when the user presses the system back button)
 
 ### Components
 
@@ -148,6 +170,7 @@ Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs
 | `VOLT_TIMEOUT` | 10 | seconds per script call before the worker is killed |
 | `VOLT_DEVICE_KEY` | – | shared key baked into APKs. Without it, run/watch calls are rejected |
 | `VOLT_SESSION_DAYS` | 14 | IDE login lifetime |
+| `VOLT_MAX_UPLOAD_MB` | 15 | maximum size of a camera or file upload |
 | `VOLT_APP_*` | – | passed to scripts (secrets, API URLs). All other server env vars are hidden from scripts |
 | `VOLT_KEYSTORE` / `VOLT_KEYSTORE_PASS` | generated | your release signing key for APKs |
 | `ANDROID_HOME` | auto | only needed for building APKs (JDK + build-tools + a platform) |
@@ -160,7 +183,9 @@ Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs
 
 - Scripts run as separate processes with a scrubbed environment and timeouts, but they are **not sandboxed** from the host filesystem. Treat app authors as trusted, and use the container setup for isolation.
 - State lives in SQLite on a single node. Scale vertically or shard apps across nodes. Running several replicas of one app needs a shared state store, which is not built in yet.
-- App logic runs on the server, so apps need a network connection. Native device APIs beyond toast, vibrate and open-URL are not exposed yet.
+- App logic runs on the server. Offline, the app shows the last cached screen but taps need the network.
+- Not built in yet: push notifications from the server while the app is closed (needs Firebase; scheduled local reminders do work), background jobs, Bluetooth/NFC, a QR scanner, and recycled lists for very large datasets.
+- Uploads are stored in `data/uploads/` under unguessable names and are never deleted automatically. Add your own retention policy.
 
 ## How it works
 

@@ -1,6 +1,26 @@
 package dev.volt.player;
 
+import android.Manifest;
 import android.app.ActionBar;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.pm.PackageManager;
+import android.content.res.Configuration;
+import android.database.Cursor;
+import android.graphics.Matrix;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.media.ExifInterface;
+import android.provider.ContactsContract;
+import android.provider.MediaStore;
+import android.provider.OpenableColumns;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -78,6 +98,11 @@ public class MainActivity extends Activity {
     SharedPreferences prefs;
     String backId;
     float dp;
+    static final int RC_CAM = 101, RC_PICK = 102, RC_CONTACT = 103, RP_LOC = 201, RP_NOTIF = 202;
+    String pendCam, pendPick, pendContact, pendLoc, lastRoute;
+    File camFile;
+    boolean goingBack;
+    final List<JSONObject> notifQueue = new ArrayList<>();
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -105,10 +130,16 @@ public class MainActivity extends Activity {
         started = true; hasContent = false; ver = -1;
         setTitle(app);
         host.removeAllViews();
-        ProgressBar pb = new ProgressBar(this);
-        host.addView(pb, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        String cached = prefs.getString("ui:" + app + ":" + channel, null);
+        boolean shown = false;
+        if (cached != null) try { render(new JSONObject(cached)); shown = true; } catch (Exception ignored) {}
+        if (!shown) {
+            ProgressBar pb = new ProgressBar(this);
+            host.addView(pb, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        }
         send(null);
         startWatch();
+        handleTap(getIntent());
     }
 
     void startWatch() {
@@ -137,6 +168,8 @@ public class MainActivity extends Activity {
             JSONObject in = new JSONObject();
             for (Map.Entry<String, String> en : inputs.entrySet()) { in.put(en.getKey(), en.getValue()); lastServerVal.put(en.getKey(), en.getValue()); }
             e.put("inputs", in);
+            e.put("store", store());
+            e.put("device", device());
         } catch (Exception ignored) {}
         return e;
     }
@@ -186,7 +219,7 @@ public class MainActivity extends Activity {
     void apply(JSONObject r) {
         ver = r.optLong("v", ver);
         JSONObject ui = r.optJSONObject("ui");
-        if (ui != null) render(ui);
+        if (ui != null) { render(ui); prefs.edit().putString("ui:" + app + ":" + channel, ui.toString()).apply(); }
         JSONObject fx = r.optJSONObject("fx");
         if (fx == null) return;
         if (fx.has("toast")) Toast.makeText(this, fx.optString("toast"), Toast.LENGTH_SHORT).show();
@@ -196,6 +229,7 @@ public class MainActivity extends Activity {
             long ms = fx.optLong("vibrate", 30);
             if (vb != null) { if (Build.VERSION.SDK_INT >= 26) vb.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)); else vb.vibrate(ms); }
         }
+        nativeFx(fx);
     }
 
     void render(JSONObject screen) {
@@ -226,6 +260,14 @@ public class MainActivity extends Activity {
             final int y = scrollY;
             if (y > 0) sv.post(() -> sv.scrollTo(0, y));
         } else host.addView(content, new FrameLayout.LayoutParams(-1, -1));
+        String route = screen.optString("route", "");
+        if (lastRoute != null && !route.equals(lastRoute)) {
+            View top = host.getChildAt(0);
+            float w = getResources().getDisplayMetrics().widthPixels * 0.25f;
+            top.setTranslationX(goingBack ? -w : w); top.setAlpha(0f);
+            top.animate().translationX(0).alpha(1f).setDuration(200).start();
+        }
+        lastRoute = route; goingBack = false;
         hasContent = true;
     }
 
@@ -460,7 +502,7 @@ public class MainActivity extends Activity {
     }
 
     void showError(Exception e) {
-        if (hasContent) { Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show(); return; }
+        if (hasContent) { Toast.makeText(this, "Offline: showing last screen", Toast.LENGTH_SHORT).show(); return; }
         LinearLayout ll = form("Can't reach server");
         TextView t = new TextView(this); t.setText(server + "\n\n" + e.getMessage()); t.setTextColor(0xFF6B7280);
         ll.addView(t);
@@ -535,7 +577,7 @@ public class MainActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
-        if (backId != null && started) send(event("tap", backId, null)); else super.onBackPressed();
+        if (backId != null && started) { goingBack = true; send(event("tap", backId, null)); } else super.onBackPressed();
     }
 
     @Override public boolean onCreateOptionsMenu(Menu m) {
@@ -552,5 +594,246 @@ public class MainActivity extends Activity {
         });
         else if (i.getItemId() == 3) showConnect();
         return true;
+    }
+
+    // ---------------------------------------------------------------- native features
+    void nativeFx(JSONObject fx) {
+        try {
+            if (fx.has("camera")) camera(fx.optString("camera"));
+            if (fx.has("pick")) {
+                Object p = fx.opt("pick");
+                JSONObject o = p instanceof JSONObject ? (JSONObject) p : new JSONObject().put("id", String.valueOf(p));
+                pick(o.optString("id", "pick"), o.optString("type", "image"));
+            }
+            if (fx.has("location")) location(fx.optString("location"));
+            if (fx.has("notify")) {
+                Object n = fx.opt("notify");
+                JSONArray arr = n instanceof JSONArray ? (JSONArray) n : new JSONArray().put(n instanceof JSONObject ? n : new JSONObject().put("text", String.valueOf(n)));
+                for (int i = 0; i < arr.length(); i++) if (arr.optJSONObject(i) != null) notifyFx(arr.optJSONObject(i));
+            }
+            if (fx.has("share")) {
+                Intent s = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, fx.optString("share"));
+                startActivity(Intent.createChooser(s, null));
+            }
+            if (fx.has("clipboard")) {
+                ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("text", fx.optString("clipboard")));
+                if (Build.VERSION.SDK_INT < 33) Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
+            }
+            if (fx.has("contact")) {
+                pendContact = fx.optString("contact");
+                startActivityForResult(new Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI), RC_CONTACT);
+            }
+            if (fx.has("store")) {
+                JSONObject cur = store(), up = fx.optJSONObject("store");
+                if (up != null) {
+                    Iterator<String> it = up.keys();
+                    while (it.hasNext()) { String k = it.next(); if (up.isNull(k)) cur.remove(k); else cur.put(k, up.get(k)); }
+                    prefs.edit().putString("store:" + app, cur.toString()).apply();
+                }
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Native action failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    JSONObject store() {
+        try { return new JSONObject(prefs.getString("store:" + app, "{}")); } catch (Exception e) { return new JSONObject(); }
+    }
+
+    JSONObject device() {
+        JSONObject d = new JSONObject();
+        try {
+            d.put("platform", "android").put("sdk", Build.VERSION.SDK_INT).put("model", Build.MODEL).put("brand", Build.MANUFACTURER)
+             .put("lang", Locale.getDefault().toLanguageTag())
+             .put("dark", (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES)
+             .put("width", Math.round(getResources().getDisplayMetrics().widthPixels / dp)).put("height", Math.round(getResources().getDisplayMetrics().heightPixels / dp));
+        } catch (Exception ignored) {}
+        return d;
+    }
+
+    static JSONObject err(String msg) {
+        try { return new JSONObject().put("error", msg == null ? "failed" : msg); } catch (Exception e) { return new JSONObject(); }
+    }
+
+    void result(final String id, final Object value) {
+        if (id == null) return;
+        main.post(() -> send(event("result", id, value)));
+    }
+
+    void camera(String id) {
+        try {
+            File dir = new File(getCacheDir(), "cam"); dir.mkdirs();
+            String name = "c" + System.currentTimeMillis() + ".jpg";
+            camFile = new File(dir, name);
+            Uri uri = Uri.parse("content://" + getPackageName() + ".files/" + name);
+            Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            i.putExtra(MediaStore.EXTRA_OUTPUT, uri);
+            i.setClipData(ClipData.newRawUri("", uri));
+            i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            pendCam = id;
+            startActivityForResult(i, RC_CAM);
+        } catch (Exception e) { pendCam = null; result(id, err("camera unavailable")); }
+    }
+
+    void pick(String id, String type) {
+        try {
+            Intent i = new Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType(type.equals("image") ? "image/*" : type.equals("any") || type.isEmpty() ? "*/*" : type);
+            pendPick = id;
+            startActivityForResult(i, RC_PICK);
+        } catch (Exception e) { pendPick = null; result(id, err("picker unavailable")); }
+    }
+
+    @Override protected void onActivityResult(int rc, int res, Intent data) {
+        super.onActivityResult(rc, res, data);
+        if (rc == RC_CAM) {
+            final String id = pendCam; pendCam = null;
+            final File f = camFile;
+            if (res != RESULT_OK || f == null || !f.exists() || f.length() == 0) { result(id, err("cancelled")); return; }
+            net.execute(() -> {
+                try { byte[] raw = readBytes(new FileInputStream(f)); f.delete(); upload(id, scaleJpeg(raw), "image/jpeg", "photo.jpg"); }
+                catch (Exception e) { result(id, err(e.getMessage())); }
+            });
+        } else if (rc == RC_PICK) {
+            final String id = pendPick; pendPick = null;
+            if (res != RESULT_OK || data == null || data.getData() == null) { result(id, err("cancelled")); return; }
+            final Uri u = data.getData();
+            net.execute(() -> {
+                try {
+                    String type = getContentResolver().getType(u); if (type == null) type = "application/octet-stream";
+                    String name = "file";
+                    Cursor c = getContentResolver().query(u, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null);
+                    if (c != null) { if (c.moveToFirst()) name = c.getString(0); c.close(); }
+                    byte[] raw = readBytes(getContentResolver().openInputStream(u));
+                    if (type.startsWith("image/") && !type.equals("image/gif")) { raw = scaleJpeg(raw); type = "image/jpeg"; }
+                    upload(id, raw, type, name);
+                } catch (Exception e) { result(id, err(e.getMessage())); }
+            });
+        } else if (rc == RC_CONTACT) {
+            String id = pendContact; pendContact = null;
+            if (res != RESULT_OK || data == null || data.getData() == null) { result(id, err("cancelled")); return; }
+            try {
+                Cursor c = getContentResolver().query(data.getData(), new String[]{ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER}, null, null, null);
+                JSONObject o = new JSONObject();
+                if (c != null) { if (c.moveToFirst()) o.put("name", c.getString(0)).put("phone", c.getString(1)); c.close(); }
+                result(id, o.length() > 0 ? o : err("no data"));
+            } catch (Exception e) { result(id, err(e.getMessage())); }
+        }
+    }
+
+    static byte[] readBytes(InputStream in) throws Exception {
+        ByteArrayOutputStream bo = new ByteArrayOutputStream();
+        byte[] buf = new byte[65536]; int n;
+        while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+        in.close();
+        return bo.toByteArray();
+    }
+
+    static byte[] scaleJpeg(byte[] raw) {
+        BitmapFactory.Options o = new BitmapFactory.Options(); o.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(raw, 0, raw.length, o);
+        if (o.outWidth <= 0) return raw;
+        int s = 1; while (Math.max(o.outWidth, o.outHeight) / s > 1600) s *= 2;
+        BitmapFactory.Options o2 = new BitmapFactory.Options(); o2.inSampleSize = s;
+        Bitmap b = BitmapFactory.decodeByteArray(raw, 0, raw.length, o2);
+        if (b == null) return raw;
+        int rot = 0;
+        try {
+            int or = new ExifInterface(new ByteArrayInputStream(raw)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+            rot = or == ExifInterface.ORIENTATION_ROTATE_90 ? 90 : or == ExifInterface.ORIENTATION_ROTATE_180 ? 180 : or == ExifInterface.ORIENTATION_ROTATE_270 ? 270 : 0;
+        } catch (Exception ignored) {}
+        if (rot != 0) { Matrix m = new Matrix(); m.postRotate(rot); b = Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, true); }
+        ByteArrayOutputStream bo = new ByteArrayOutputStream();
+        b.compress(Bitmap.CompressFormat.JPEG, 85, bo);
+        return bo.toByteArray();
+    }
+
+    void upload(String id, byte[] bytes, String type, String name) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(server + "/api/upload/" + app + "?ch=" + channel + "&name=" + Uri.encode(name)).openConnection();
+        c.setRequestMethod("POST"); c.setConnectTimeout(8000); c.setReadTimeout(60000); c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", type);
+        if (!token.isEmpty()) c.setRequestProperty("X-Volt-Token", token);
+        c.setFixedLengthStreamingMode(bytes.length);
+        OutputStream os = c.getOutputStream(); os.write(bytes); os.close();
+        int code = c.getResponseCode();
+        String s = readAll(code < 400 ? c.getInputStream() : c.getErrorStream());
+        result(id, code < 400 ? new JSONObject(s) : err("upload failed: " + s));
+    }
+
+    boolean granted(String p) { return checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED; }
+
+    void location(String id) {
+        pendLoc = id;
+        if (!granted(Manifest.permission.ACCESS_FINE_LOCATION) && !granted(Manifest.permission.ACCESS_COARSE_LOCATION)) {
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, RP_LOC);
+            return;
+        }
+        getLocation();
+    }
+
+    static JSONObject loc(Location l) {
+        try { return new JSONObject().put("lat", l.getLatitude()).put("lng", l.getLongitude()).put("accuracy", l.getAccuracy()).put("time", l.getTime()); }
+        catch (Exception e) { return err("bad location"); }
+    }
+
+    void getLocation() {
+        final String id = pendLoc; pendLoc = null;
+        final LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        Location best = null;
+        for (String p : lm.getProviders(true)) {
+            try { Location l = lm.getLastKnownLocation(p); if (l != null && (best == null || l.getTime() > best.getTime())) best = l; } catch (SecurityException ignored) {}
+        }
+        if (best != null && System.currentTimeMillis() - best.getTime() < 120000) { result(id, loc(best)); return; }
+        String prov = lm.isProviderEnabled(LocationManager.GPS_PROVIDER) ? LocationManager.GPS_PROVIDER
+                : lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ? LocationManager.NETWORK_PROVIDER : null;
+        final Location fallback = best;
+        if (prov == null) { result(id, fallback != null ? loc(fallback) : err("location is turned off")); return; }
+        final boolean[] done = {false};
+        final LocationListener L = new LocationListener() {
+            public void onLocationChanged(Location l) { if (done[0]) return; done[0] = true; lm.removeUpdates(this); result(id, loc(l)); }
+            public void onStatusChanged(String p, int s, Bundle b) {}
+            public void onProviderEnabled(String p) {}
+            public void onProviderDisabled(String p) {}
+        };
+        try { lm.requestLocationUpdates(prov, 0, 0, L, Looper.getMainLooper()); }
+        catch (SecurityException e) { result(id, err("denied")); return; }
+        main.postDelayed(() -> { if (!done[0]) { done[0] = true; lm.removeUpdates(L); result(id, fallback != null ? loc(fallback) : err("timeout")); } }, 15000);
+    }
+
+    void notifyFx(JSONObject n) {
+        if (Build.VERSION.SDK_INT >= 33 && !granted(Manifest.permission.POST_NOTIFICATIONS)) {
+            notifQueue.add(n);
+            if (notifQueue.size() == 1) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, RP_NOTIF);
+            return;
+        }
+        postNotif(n);
+    }
+
+    void postNotif(JSONObject n) {
+        String title = n.optString("title", String.valueOf(getTitle())), text = n.optString("text", ""), tag = n.optString("tag", "");
+        double at = n.optDouble("at", 0);
+        if (at > 0) VoltAlarm.schedule(this, title, text, tag, (long) (at * 1000));
+        else VoltAlarm.post(this, title, text, tag);
+    }
+
+    @Override public void onRequestPermissionsResult(int rc, String[] perms, int[] res) {
+        boolean ok = false;
+        for (int r : res) ok |= r == PackageManager.PERMISSION_GRANTED;
+        if (rc == RP_LOC) { if (ok) getLocation(); else { result(pendLoc, err("denied")); pendLoc = null; } }
+        else if (rc == RP_NOTIF) {
+            if (ok) for (JSONObject n : notifQueue) postNotif(n);
+            else Toast.makeText(this, "Notifications are blocked", Toast.LENGTH_SHORT).show();
+            notifQueue.clear();
+        }
+    }
+
+    @Override protected void onNewIntent(Intent i) { super.onNewIntent(i); setIntent(i); handleTap(i); }
+
+    void handleTap(Intent i) {
+        if (i == null || !started) return;
+        String tag = i.getStringExtra("volt_tap");
+        if (tag == null) return;
+        i.removeExtra("volt_tap");
+        send(event("notification", tag, null));
     }
 }

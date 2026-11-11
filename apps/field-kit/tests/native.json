@@ -1,0 +1,16 @@
+[
+  {
+    "name": "native actions emit effects and handle results",
+    "steps": [
+      { "event": null, "expect": { "ui.title": "Field Kit" } },
+      { "event": { "type": "tap", "id": "camera", "inputs": {} }, "expect": { "fx.camera": "photo" } },
+      { "event": { "type": "result", "id": "photo", "value": { "url": "/uploads/field-kit/abc.jpg" }, "inputs": {} }, "expect": { "state.photos.0": "/uploads/field-kit/abc.jpg" } },
+      { "event": { "type": "tap", "id": "locate", "inputs": {} }, "expect": { "fx.location": "where" } },
+      { "event": { "type": "result", "id": "where", "value": { "lat": 52.52, "lng": 13.405, "accuracy": 5 }, "inputs": {} }, "expect": { "state.loc.lat": 52.52 } },
+      { "event": { "type": "tap", "id": "remind", "inputs": {} }, "expect": { "fx.notify.at": 10 } },
+      { "event": { "type": "result", "id": "who", "value": { "error": "cancelled" }, "inputs": {} }, "expect": { "fx.toast": "who: cancelled" } },
+      { "event": { "type": "tap", "id": "save-note", "inputs": { "note": "hi" } }, "expect": { "fx.store.note": "hi" } },
+      { "event": { "type": "tap", "id": "open-gallery", "inputs": {} }, "expect": { "ui.route": "gallery", "ui.back": "back" } }
+    ]
+  }
+]
