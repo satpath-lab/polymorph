@@ -11,12 +11,9 @@ import android.content.SharedPreferences;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.Iterator;
+import java.io.File;
+
+import dev.volt.engine.VoltEngine;
 
 public class VoltJob extends JobService {
     static final int JOB_ID = 4711;
@@ -35,8 +32,7 @@ public class VoltJob extends JobService {
         JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         js.schedule(new JobInfo.Builder(JOB_ID, new ComponentName(c, VoltJob.class))
                 .setPeriodic(Math.max(15, minutes) * 60000L)
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                .setPersisted(true).build());
+                                .setPersisted(true).build());
     }
 
     static void cancel(Context c) {
@@ -46,66 +42,33 @@ public class VoltJob extends JobService {
     static void run(Context c) throws Exception {
         VoltSecure.init(c);
         SharedPreferences sp = c.getSharedPreferences("volt", Context.MODE_PRIVATE);
-        String app = sp.getString("bg:app", "");
-        if (app.isEmpty()) return;
-        if (sp.getBoolean("bg:on", false)) {
-            JSONObject ev = new JSONObject().put("type", "background").put("id", "background").put("inputs", new JSONObject())
-                    .put("store", new JSONObject(VoltSecure.dec(sp.getString("store:" + app, null), "{}")))
-                    .put("device", new JSONObject().put("platform", "android").put("background", true));
-            JSONObject body = new JSONObject().put("session", sp.getString("sid", "")).put("event", ev);
-            JSONObject r = http(sp, "POST", "/api/run/" + app + "?ch=" + sp.getString("bg:channel", "prod"), body.toString());
-            JSONObject fx = r.optJSONObject("fx");
-            if (fx != null) {
-                Object n = fx.opt("notify");
-                if (n != null) {
-                    JSONArray arr = n instanceof JSONArray ? (JSONArray) n : new JSONArray().put(n instanceof JSONObject ? n : new JSONObject().put("text", String.valueOf(n)));
-                    for (int i = 0; i < arr.length(); i++) {
-                        JSONObject m = arr.optJSONObject(i); if (m == null) continue;
-                        if (m.optDouble("at", 0) > 0) VoltAlarm.schedule(c, m.optString("title", app), m.optString("text"), m.optString("tag"), (long) (m.optDouble("at") * 1000));
-                        else VoltAlarm.post(c, m.optString("title", app), m.optString("text"), m.optString("tag"));
-                    }
-                }
-                JSONObject up = fx.optJSONObject("store");
-                if (up != null) {
-                    JSONObject cur = new JSONObject(VoltSecure.dec(sp.getString("store:" + app, null), "{}"));
-                    Iterator<String> it = up.keys();
-                    while (it.hasNext()) { String k = it.next(); if (up.isNull(k)) cur.remove(k); else cur.put(k, up.get(k)); }
-                    sp.edit().putString("store:" + app, VoltSecure.enc(cur.toString())).apply();
+        final String app = sp.getString("bg:app", "");
+        if (app.isEmpty() || !sp.getBoolean("bg:on", false)) return;
+        String source = sp.getString("bg:source", "bundled");
+        if ("remote".equals(source)) try { VoltApp.updateRemote(c); } catch (Exception ignored) {}
+        final JSONObject ev = new JSONObject().put("type", "background").put("id", "background").put("inputs", new JSONObject())
+                .put("store", VoltApp.store(c, app)).put("device", new JSONObject().put("platform", "android").put("background", true));
+        final MainActivity act = MainActivity.alive;
+        if (act != null && app.equals(act.app)) { act.main.post(() -> act.send(ev)); return; }
+        File dir = VoltApp.scripts(c, source);
+        String main = VoltApp.mainFile(dir);
+        if (main == null) return;
+        try (VoltEngine e = VoltEngine.open(c, dir, main)) {
+            JSONObject r = e.step(VoltApp.loadState(c, app), ev);
+            Object st = r.opt("state");
+            JSONObject fx = VoltApp.split(st);
+            VoltApp.saveState(c, app, st);
+            Object n = fx.opt("notify");
+            if (n != null) {
+                JSONArray arr = n instanceof JSONArray ? (JSONArray) n : new JSONArray().put(n instanceof JSONObject ? n : new JSONObject().put("text", String.valueOf(n)));
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject m = arr.optJSONObject(i); if (m == null) continue;
+                    if (m.optDouble("at", 0) > 0) VoltAlarm.schedule(c, m.optString("title", app), m.optString("text"), m.optString("tag"), (long) (m.optDouble("at") * 1000));
+                    else VoltAlarm.post(c, m.optString("title", app), m.optString("text"), m.optString("tag"));
                 }
             }
+            JSONObject up = fx.optJSONObject("store");
+            if (up != null) VoltApp.putStore(c, app, up);
         }
-        if (VoltSecure.on("push", true)) inbox(c);
-    }
-
-    static void inbox(Context c) throws Exception {
-        SharedPreferences sp = c.getSharedPreferences("volt", Context.MODE_PRIVATE);
-        String app = sp.getString("bg:app", ""), ch = sp.getString("bg:channel", "prod");
-        if (app.isEmpty()) return;
-        String key = "inbox:" + app + ":" + ch;
-        long since = sp.getLong(key, 0);
-        JSONObject r = http(sp, "GET", "/api/inbox/" + app + "?ch=" + ch + "&session=" + sp.getString("sid", "") + "&since=" + since, null);
-        JSONArray msgs = r.optJSONArray("messages");
-        if (msgs != null) for (int i = 0; i < msgs.length(); i++) {
-            JSONObject m = msgs.getJSONObject(i);
-            VoltAlarm.post(c, m.optString("title", app), m.optString("text"), m.optString("tag"));
-        }
-        sp.edit().putLong(key, r.optLong("cursor", since)).apply();
-    }
-
-    static JSONObject http(SharedPreferences sp, String method, String path, String body) throws Exception {
-        HttpURLConnection c = VoltSecure.open(sp.getString("bg:server", "") + path);
-        c.setRequestMethod(method); c.setConnectTimeout(8000); c.setReadTimeout(20000);
-        String tok = sp.getString("bg:token", "");
-        if (!tok.isEmpty()) c.setRequestProperty("X-Volt-Token", tok);
-        if (body != null) {
-            c.setDoOutput(true); c.setRequestProperty("Content-Type", "application/json");
-            byte[] b = body.getBytes("UTF-8"); c.setFixedLengthStreamingMode(b.length);
-            OutputStream os = c.getOutputStream(); os.write(b); os.close();
-        }
-        InputStream in = c.getResponseCode() < 400 ? c.getInputStream() : c.getErrorStream();
-        ByteArrayOutputStream bo = new ByteArrayOutputStream(); byte[] buf = new byte[8192]; int n;
-        while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
-        in.close();
-        return new JSONObject(bo.toString("UTF-8"));
     }
 }

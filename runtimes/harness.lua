@@ -71,7 +71,16 @@ local function decode(s)
   end
   return val()
 end
-local env = setmetatable({json = {encode = encode, decode = decode}}, {__index = _G})
+local mem = {}
+local function fake(name, method, args)
+  args = args or {}
+  if name == "device" then return {platform = "web", model = "preview", sdk = 0} end
+  if name == "storage" then if method == "set" then mem[args.key] = args.value return true elseif method == "get" then return mem[args.key] elseif method == "all" then return mem end end
+  if name == "clipboard" then if method == "set" then mem._clip = args.text return true end return mem._clip end
+  return nil
+end
+local android = setmetatable({call = function(n, m, a) return fake(n, m, a) end}, {__index = function(_, n) return function(m, a) return fake(n, m, a) end end})
+local env = setmetatable({json = {encode = encode, decode = decode}, android = android}, {__index = _G})
 local chunk, lerr = loadfile(path, "t", env)
 if chunk then local ok, e = pcall(chunk) if not ok then lerr = tostring(e) end end
 for line in io.lines() do

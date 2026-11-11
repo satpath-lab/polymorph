@@ -1,0 +1,4 @@
+[{ "name": "bridge calls work in preview", "steps": [
+  { "event": { "type": "tap", "id": "info" }, "expect": { "state.info.platform": "web" } },
+  { "event": { "type": "tap", "id": "save" }, "expect": { "state.saved": 1 } }
+]}]

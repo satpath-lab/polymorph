@@ -87,7 +87,7 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
     <div class="bar"><b id="fname">—</b><span class="grow"></span><span class="pill" id="save">saved</span></div>
     <div id="edwrap"><textarea id="fallback" spellcheck="false"></textarea></div>
     <div class="tabs" id="tabs">
-      <button data-p="logs" class="on">Logs</button><button data-p="tests">Tests</button><button data-p="releases">Releases</button><button data-p="push">Push</button><button data-p="audit">Audit</button><button data-p="users" class="admin-only">Users &amp; tokens</button>
+      <button data-p="logs" class="on">Logs</button><button data-p="tests">Tests</button><button data-p="releases">Releases</button><button data-p="audit">Audit</button><button data-p="users" class="admin-only">Users &amp; tokens</button>
     </div>
     <div class="pane on" id="p-logs"><div id="logs"></div></div>
     <div class="pane" id="p-tests"><div class="row"><button class="pri dev-only" id="runtests">▶ Run tests</button><span class="mute">Cases live in <code>tests/*.json</code>. A release is blocked unless every case passes.</span></div><div id="testout"></div></div>
@@ -110,7 +110,7 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
   <section class="right">
     <div class="seg" id="chan"><button data-c="dev" class="on">Dev (live draft)</button><button data-c="prod">Production</button></div>
     <div class="phone"><div class="screen" id="screen"><div class="sbar" id="sbar"></div><div class="abar" id="abar">…</div><div class="content" id="content"></div><div class="toast" id="toast"></div><div id="dlgwrap"></div></div></div>
-    <div class="apk dev-only"><input id="apksrv" title="Server URL the phone will use"><select id="apkch"><option value="prod">prod</option><option value="dev">dev</option></select><select id="apkfmt"><option value="apk">.apk</option><option value="aab">.aab</option></select><button class="pri" id="apkbtn">⬇ APK</button></div>
+    <div class="apk dev-only"><input id="apksrv" title="Dev builds sync code from this URL; release builds use it only for signed script updates"><select id="apkch"><option value="prod">release (runs offline)</option><option value="dev">dev (live reload)</option></select><select id="apkfmt"><option value="apk">.apk</option><option value="aab">.aab</option></select><button class="pri" id="apkbtn">⬇ APK</button></div>
     <div class="hint" id="hint"></div>
   </section>
 </main>

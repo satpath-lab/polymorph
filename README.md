@@ -1,57 +1,74 @@
 # ⚡ VoltForge
 
-**Build real native Android apps in Lua, Python, PHP, JavaScript or Ruby, and change them live from anywhere.**
+**Build real native Android apps in Lua, Python, PHP, JavaScript or Ruby. The scripts run on the phone itself.**
 
-You write three small functions in any of those languages. VoltForge runs your script on a server and turns its output into **real native Android views** (not a WebView). When you save, every installed phone updates in under a second, with no rebuild, no reinstall and no app-store review.
+You write three small functions in any of those languages. VoltForge puts a real interpreter for that language inside your APK. Your script runs on the device and its output becomes **real native Android views** (not a WebView). No server is needed: the app works offline, from the first launch.
 
-- 🧠 **5 languages**: Lua, Python, PHP, JavaScript (Node), Ruby
-- 📱 **Native UI**: real `LinearLayout`, `Button`, `EditText`, `Switch`, `ImageView`…
-- 🔥 **Hot reload over the network**: save, and every phone running the app re-renders. The app's state is kept.
-- 🚀 **Fast**: each language runs in a persistent warm worker, so one event takes about 1 ms on the server
-- 🧑‍💻 **Web IDE**: code editor, interactive phone preview, live logs, one-click **Build APK**
-- 📦 **Signed APKs** with no Gradle and no Android Studio, built straight from the SDK tools
-- 🪶 **Zero dependencies**: the server is one Python file that uses only the standard library
-- 🧩 **Native plugins** in Java, Kotlin, C/C++ or any .jar, callable from every script language
-- 🏢 **Built for teams**: roles, audit log, test-gated releases, instant deploy and rollback, CI/CD, Docker, metrics
+- 🧠 **5 languages on the device**: Lua 5.4, JavaScript (QuickJS), Python 3.14 (official CPython), Ruby (mruby), PHP 8.4
+- 📱 **Native UI**: real `LinearLayout`, `Button`, `EditText`, lists, charts, dialogs, tabs…
+- 🤖 **Direct Android access from scripts**: `android.device()`, `android.storage(...)`, `android.http(...)`, `android.clipboard(...)`, plus any plugin you write in Java, Kotlin or C
+- 🔌 **Your choice of where code lives**: bundled in the APK (fully offline), synced live from your computer while developing, or downloaded as **signed over-the-air updates** that you can push at any time
+- 🔥 **Live reload while developing**: save a file and the phone reloads in about a second, keeping its state
+- 🧩 **Drop-in library**: `volt.py aar` builds the engine as an `.aar` for any existing Android Studio project
+- 📦 **Signed APKs and AABs** with no Gradle and no Android Studio, built straight from the SDK tools
+- 🏢 **Built for teams**: web IDE, tests, test-gated releases, roles, audit log, CI/CD
 
 ## Why VoltForge
 
-Teams that want an Android app usually either learn Kotlin and wait on Play Store review for every change, or ship a WebView that doesn't feel native. VoltForge sits in between:
-
-- **Logic stays in the language your team already uses.** A Python data team, a PHP web shop, a Node backend team, or Lua and Ruby developers can ship a native app without learning Android.
-- **Changes go live in seconds.** Screens and logic run on your server, so a bug fix or a new flow needs no new APK and no store review.
-- **It stays native.** Screens are real Android views, and anything a script can't do can be written in Java, Kotlin or C and called from the script.
+- **Logic stays in the language your team already uses.** A Python data team, a PHP web shop, a Node team, or Lua and Ruby developers can ship a native app without learning Android.
+- **It runs natively and offline.** The interpreter is compiled into the APK for each CPU type. Events are handled on the phone in microseconds to a few milliseconds.
+- **You still control updates.** Turn on signed script updates and fix bugs without a store release. Updates are verified with your key before they run.
+- **Nothing is out of reach.** Anything a script can't do directly, you write in Java, Kotlin or C and call from the script.
 
 ### Where it helps
 
 | use case | why it fits |
 |---|---|
-| Internal company tools: field service, inventory, approvals, check-ins | camera, GPS, offline queue, roles and audit log built in; every employee's app updates instantly |
-| Ops and admin dashboards on the phone | charts, big lists, push notifications, direct server-side data access |
+| Internal company tools: field service, inventory, approvals, check-ins | camera, GPS, storage, works offline; push fixes to every employee with a signed update |
 | Prototypes and MVPs | one file per app, live browser preview, signed APK in one click |
-| Apps whose rules change often (pricing, forms, workflows) | edit the script and every phone updates, no release needed |
+| Apps whose rules change often (pricing, forms, workflows) | ship new script logic over the air, no store review |
+| Adding scripting to an existing Android app | use the `.aar` and call `VoltEngine` from your Kotlin or Java code |
 | Teaching app development | five beginner-friendly languages with instant feedback |
-
-It is **not** the right tool for games, heavy offline-first apps, or apps that must work without a server.
 
 ## Quick start
 
 ```bash
-python3 volt.py serve
+python3 volt.py serve          # web IDE with a live phone preview at http://localhost:8787
+python3 volt.py apk todo-lua   # build an offline APK with the script inside
 ```
 
-Open **http://localhost:8787**, pick an app, and edit it. The phone preview updates as you type.
+### Three ways to ship code
 
-### Put it on a phone
+| build | command | where the script comes from |
+|---|---|---|
+| **Bundled** (default) | `volt.py apk myapp` | inside the APK. Works fully offline. A new version needs a new APK |
+| **Live dev** | `volt.py apk myapp --dev http://192.168.1.10:8787` | synced from your computer. Saving a file reloads the phone. Use `http://10.0.2.2:8787` for the emulator |
+| **Over-the-air** | add `"updates"` to `app.json`, then `volt.py apk myapp --server https://your-host` | bundled code first, then signed updates downloaded from your server or any static host (S3, GitHub Pages, a CDN) |
 
-1. In the IDE, set the server URL the phone can reach (your LAN IP, a public URL, or `http://10.0.2.2:8787` for the emulator).
-2. Choose `dev` (follows every save) or `prod` (runs only deployed releases), click **⬇ APK**, and install it.
+Every option runs the script **on the phone**. The dev and over-the-air options only download files; no screen ever comes from a server.
 
-You can also build from the command line:
+Over-the-air updates in `app.json`:
+
+```json
+{ "updates": { "url": "https://cdn.example.com/myapp.zip", "check": "launch" } }
+```
+
+- `check` is `"launch"` (every app start) or a number of minutes.
+- Publish a version with `python3 volt.py bundle myapp --out public/`. It writes `myapp.zip` and `myapp.zip.sig`.
+- Or let `volt.py serve` host them at `/b/<app>.zip`. It always serves the deployed release.
+- Bundles are signed with an ECDSA P-256 key kept in `data/bundle-signing.pem`. Its public key is built into the APK, and a bundle with a bad signature is rejected (the app keeps running its current code). Back this key up: without it you can't ship updates to installed apps.
+
+### Use the engine in your own Android project
 
 ```bash
-python3 volt.py apk todo-lua --server https://volt.example.com --channel prod
-python3 volt.py apk --server http://192.168.1.10:8787     # generic "player" app that can open any app on the server
+python3 volt.py aar --langs python,js    # → data/build/voltengine.aar
+```
+
+```kotlin
+val engine = VoltEngine.open(context, scriptDir, "main.py")
+val total = engine.invoke("price_with_tax", 100, "DE")     // call any script function
+val screen = engine.step(state, event)                     // or use the init/update/view contract
+VoltEngine.setHandler(myHandler)                           // answer android.* calls from scripts
 ```
 
 ## Writing an app
@@ -85,8 +102,8 @@ Set any of these keys on the state you return. The phone performs the action onc
 
 | effect | what happens | result `value` |
 |---|---|---|
-| `_camera = "id"` | opens the camera; the photo is downscaled to ≤1600 px, rotated upright, and uploaded | `{url, type, size, name}`. Show it with `{type: "image", src: url}` |
-| `_pick = {id, type}` | opens the system picker; `type` is `"image"`, `"any"` or a MIME type; the file is uploaded | `{url, type, size, name}` |
+| `_camera = "id"` | opens the camera; the photo is downscaled to ≤1600 px, rotated upright, and saved in app storage | `{url, path, type, size, name}` (`url` is a `file://` URL). Show it with `{type: "image", src: url}` |
+| `_pick = {id, type}` | opens the system picker; `type` is `"image"`, `"any"` or a MIME type; the file is copied into app storage | `{url, path, type, size, name}` |
 | `_location = "id"` | gets a GPS or network fix (asks permission, 15 s timeout) | `{lat, lng, accuracy, time}` |
 | `_notify = {title, text, tag, at}` | shows a notification now, or `at` seconds later, even if the app is closed. A list sends several | tapping it sends `{type: "notification", id: tag}` |
 | `_contact = "id"` | opens the contact picker (no contacts permission needed) | `{name, phone}` |
@@ -106,10 +123,32 @@ The web preview fakes all of these: a file chooser stands in for the camera, it 
 
 `{type: "list", id: "feed", items: [...], onEnd: "more", gap: 8}` renders with Android's recycling `ListView`. Only the visible rows exist, so thousands of rows scroll smoothly. When the user reaches the end, `onEnd` is sent as a tap event so you can load more, and the scroll position is kept across updates. Use it on a screen with `scroll: false`; the list then fills the remaining space. On a scrolling screen it falls back to a plain column.
 
-### Background jobs and server push (no Firebase)
+### Background jobs
 
-- `_background = {every: 15}` schedules a periodic job (Android's minimum is 15 minutes) that runs even when the app is closed or after a reboot. Each run sends your script `{type: "background"}`, and any `_notify` / `_store` it returns is applied on the phone. `_background = {on: false}` cancels it.
-- **Push:** from the IDE's Push tab, `POST /api/push/<app> {title, text, ch, session?}` (CI and backends with an API token), or from any script with `_push = {to: "*" | sessionId, title, text}`. Messages reach installed apps as notifications within seconds while the app is open, and on the next background run while it is closed.
+`_background = {every: 15}` schedules a periodic job (Android's minimum is 15 minutes) that runs even when the app is closed or after a reboot. Each run calls your script on the phone with `{type: "background"}`, and any `_notify` / `_store` it returns is applied. `_background = {on: false}` cancels it. For instant push messages, add the Firebase SDK as a plugin jar.
+
+### Direct Android calls
+
+Scripts can call Android synchronously and get the result back right away. This is in addition to the `_effect` keys above:
+
+| call | result |
+|---|---|
+| `android.device()` | `{platform, sdk, model, brand, lang, dark, width, height}` |
+| `android.storage("set", {key, value})`, `("get", {key})`, `("remove", {key})`, `("all")` | device storage (encrypted when `encryptStorage` is on) |
+| `android.http("", {url, method, headers, body, json: true, timeout})` | `{status, ok, body, headers, json}`. Certificate pins apply |
+| `android.files("read" \| "write" \| "list" \| "delete" \| "exists", {path, text, append})` | files in the app's private storage |
+| `android.clipboard("get")`, `android.clipboard("set", {text})` | clipboard text |
+| `android.toast("", {text})`, `android.vibrate("", {ms})`, `android.open("", {url})` | – |
+| `android.app("info")`, `android.app("update")` | app info / check for a signed script update now and reload if one arrives |
+| `android.<YourPlugin>(method, args)` | any Java, Kotlin or C plugin in `native/` (see below) |
+
+The syntax is the same idea in every language:
+- **Lua and JavaScript:** `android.storage("get", {key = "x"})`, `android.storage('get', {key: 'x'})`
+- **Python:** `android.storage("get", {"key": "x"})`
+- **Ruby:** `Android.storage("get", {"key" => "x"})`
+- **PHP:** `Android::storage('get', ['key' => 'x'])`
+
+In the web preview, `device`, `storage` and `clipboard` are simulated and other calls return `null`.
 
 ## Native plugins (Java, Kotlin, C/C++, any .jar)
 
@@ -201,52 +240,55 @@ Every security and behavior feature can be switched on or off per app. Any key y
   "pins": ["sha256/…"],
   "features": {
     "requireHttps": true,       "encryptStorage": true,   "blockScreenshots": false,
-    "cacheScreens": true,       "offlineQueue": true,     "push": true,
-    "backgroundJobs": true,     "location": true,         "notifications": true
+    "cacheScreens": true,       "backgroundJobs": true,
+    "location": true,           "notifications": true
+  },
+  "updates": { "url": "https://cdn.example.com/showcase.zip", "check": "60" }
   }
 }
 ```
 
 | feature | on | off |
 |---|---|---|
-| `requireHttps` | production builds refuse `http://` servers, and plain HTTP is disabled in the APK | allows HTTP (for internal networks) |
-| `encryptStorage` | screens cached on the phone, `_store` data and queued offline actions are encrypted with AES-256-GCM using a hardware-backed Android Keystore key | stored as plain text |
+| `requireHttps` | script updates must come from `https://`, and plain HTTP is disabled in the APK | allows HTTP (for internal networks) |
+| `encryptStorage` | app state, cached screens and storage are encrypted with AES-256-GCM using a hardware-backed Android Keystore key | stored as plain text |
 | `blockScreenshots` | screenshots and screen recording are blocked on every screen (`secure: true` does it per screen) | allowed |
-| `cacheScreens` | the last screen is shown instantly on launch, even offline | nothing is kept on the phone |
-| `offlineQueue` | taps made while offline are saved and replayed in order when the connection returns | offline taps show an error |
-| `push`, `backgroundJobs` | inbox polling / scheduled background runs | disabled, and the boot permission is removed |
+| `cacheScreens` | the last screen is shown instantly while the engine starts | the screen is drawn once the script has run |
+| `backgroundJobs` | scheduled background runs | disabled, and the boot permission is removed |
 | `location`, `notifications` | the matching Android permissions are included | permissions are left out of the manifest |
 
-Dev builds (`--channel dev`) may use `http://` so you can develop locally.
+`updates` is optional. Leave it out for a fully bundled app. Add `"publicKey"` to use your own signing key, or `"unsigned": true` to skip signatures (not recommended). Dev builds (`--dev`) may use `http://` so you can develop locally.
 
 ## Security
 
-- **In transit:** HTTPS (required for production builds by default) plus optional **certificate pinning**. Run `python3 volt.py pin https://your-server` and put the printed pins in `app.json`. A server presenting a certificate that is not pinned is rejected before any data is sent. Pin your CA's intermediate certificate so routine certificate renewals keep working.
-- **On the phone:** cached screens, device storage and the offline queue are encrypted with an Android Keystore AES-256-GCM key that cannot be exported. Screenshots can be blocked. Plain HTTP is disabled in HTTPS builds.
-- **On the server:** PBKDF2 password hashes, tokens stored only as hashes, roles, an audit log, login lockout after 10 failures per IP within 10 minutes, `X-Frame-Options` / `nosniff` / `Referrer-Policy` headers, HSTS (`VOLT_HSTS=1` or set automatically behind an HTTPS proxy), and an optional device key.
-- **Script sandbox:** with `VOLT_SANDBOX=1`, scripts run under `sandbox-exec` (macOS) or `bubblewrap` (Linux). A script can read its own app folder but not the database, other apps or `~/.ssh`, and cannot write files. `VOLT_SANDBOX_NET=0` also blocks network access.
+- **Code integrity:** over-the-air script bundles must carry a valid ECDSA P-256 signature from your key, or the phone refuses them and keeps its current code.
+- **In transit:** HTTPS (required for script updates by default) plus optional **certificate pinning**. Run `python3 volt.py pin https://your-server` and put the printed pins in `app.json`. A server presenting a certificate that is not pinned is rejected before any data is sent. Pin your CA's intermediate certificate so routine certificate renewals keep working.
+- **On the phone:** app state, cached screens and device storage are encrypted with an Android Keystore AES-256-GCM key that cannot be exported. Screenshots can be blocked. Plain HTTP is disabled in HTTPS builds.
+- **On the dev/update server:** PBKDF2 password hashes, tokens stored only as hashes, roles, an audit log, login lockout after 10 failures per IP within 10 minutes, `X-Frame-Options` / `nosniff` / `Referrer-Policy` headers, HSTS (`VOLT_HSTS=1` or set automatically behind an HTTPS proxy), and an optional device key.
+- **Preview sandbox:** with `VOLT_SANDBOX=1`, scripts running in the web preview run under `sandbox-exec` (macOS) or `bubblewrap` (Linux). A script can read its own app folder but not the database, other apps or `~/.ssh`, and cannot write files. `VOLT_SANDBOX_NET=0` also blocks network access.
 
 ## Play Store
 
 - `app.json` sets the package ID, version, icon, orientation and SDK levels. `targetSdk` defaults to 35, which Google Play requires.
-- Build an **Android App Bundle** with `python3 volt.py apk myapp --server https://… --format aab`, or pick `.aab` in the IDE.
+- Build an **Android App Bundle** with `python3 volt.py apk myapp --format aab`, or pick `.aab` in the IDE.
 - Bundles need Google's `bundletool`. Download `bundletool-all-<version>.jar` from github.com/google/bundletool/releases and set `VOLT_BUNDLETOOL` to its path.
 - Use your own signing key with `VOLT_KEYSTORE` / `VOLT_KEYSTORE_PASS`.
 
 ## Team workflow
 
 ```
- edit (IDE or your own editor + git)  ──▶  dev channel: live on dev APKs and the preview
+ edit (IDE or your own editor + git)  ──▶  dev APKs and the preview reload on every save
                 │
          tests/*.json pass?  ──no──▶  release blocked
                 │ yes
-        release rN (immutable snapshot)  ──admin deploys──▶  prod channel: every prod APK updates
-                                                     ◀── one-click rollback to any rN
+        release rN (immutable snapshot)  ──admin deploys──▶  /b/<app>.zip (signed): apps with "updates" pick it up
+                │                                    ◀── one-click rollback to any rN
+                └──▶  volt.py apk myapp: release builds bundle the deployed release
 ```
 
-- **Two channels.** `dev` runs the working tree and reloads on every save. `prod` runs only an immutable release snapshot. Build a dev APK for your team and a prod APK for users.
+- **Dev and release builds.** Dev APKs sync the working tree and reload on every save. Release APKs bundle the deployed release (or the working tree if nothing is deployed).
 - **Releases.** A release copies the app into `data/releases/<app>/<n>`. It is created only if every test passes. An admin can force one, and that is recorded in the audit log.
-- **Deploy and rollback** happen instantly over the air, with no store review. State is kept per user.
+- **Deploy and rollback** reach apps that use `"updates"` on their next check, with no store review. Each phone keeps its own state.
 - **Multi-file projects.** Use any folder structure:
   - Lua: `require("util")`, which also searches `lib/`
   - Python: `from lib.util import x`
@@ -294,16 +336,16 @@ With no users, the server runs in **open mode** (everyone is admin) and shows a 
 VOLT_ADMIN_PASSWORD='change-me-now' docker compose up -d
 ```
 
-Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs as a non-root user on a read-only filesystem with CPU and memory limits. Data (SQLite database, releases, signing key) lives in the `/data` volume, so back that up.
+The server is optional: release apps run without it. Host it when your team wants the shared IDE, releases and over-the-air updates. Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs as a non-root user on a read-only filesystem with CPU and memory limits. Data (SQLite database, releases, signing key) lives in the `/data` volume, so back that up.
 
 | env var | default | |
 |---|---|---|
 | `PORT` | 8787 | listen port |
 | `VOLT_DATA` | `./data` | SQLite DB, releases, keystore, build cache |
 | `VOLT_ADMIN_PASSWORD` / `VOLT_ADMIN_USER` | – | creates the first admin on startup if there are no users |
-| `VOLT_WORKERS` | 4 | warm interpreter processes per app per channel |
+| `VOLT_WORKERS` | 4 | warm interpreter processes per app for the web preview |
 | `VOLT_TIMEOUT` | 10 | seconds per script call before the worker is killed |
-| `VOLT_DEVICE_KEY` | – | shared key baked into APKs. Without it, run/watch calls are rejected |
+| `VOLT_DEVICE_KEY` | – | shared key baked into APKs. Without it, dev sync and update downloads are rejected |
 | `VOLT_SESSION_DAYS` | 14 | IDE login lifetime |
 | `VOLT_MAX_UPLOAD_MB` | 15 | maximum size of a camera or file upload |
 | `VOLT_UPLOAD_DAYS` | 30 | delete uploads older than this (0 = never) |
@@ -311,7 +353,7 @@ Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs
 | `VOLT_PINS` | – | default certificate pins for every app |
 | `VOLT_BUNDLETOOL` | – | path to bundletool, for `.aab` builds |
 | `VOLT_HSTS` | – | send the HSTS header |
-| `VOLT_ABIS` | `arm64-v8a,x86_64` | CPU architectures to compile C/C++ plugins for |
+| `VOLT_ABIS` | `arm64-v8a,x86_64` | CPU types to package engines and C/C++ plugins for |
 | `ANDROID_NDK_HOME` | auto | NDK location for C/C++ plugins |
 | `VOLT_APP_*` | – | passed to scripts (secrets, API URLs). All other server env vars are hidden from scripts |
 | `VOLT_KEYSTORE` / `VOLT_KEYSTORE_PASS` | generated | your release signing key for APKs |
@@ -319,42 +361,57 @@ Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs
 
 **Ops endpoints:** `GET /healthz` (no auth), `GET /metrics` (Prometheus format: requests, errors, latency and workers per app and channel; needs a viewer token).
 
-**Performance:** on a laptop, about 2,400 events/s with 50 concurrent clients, p50 15 ms, and no lost updates (each user session is serialized).
+**Performance:** on the phone, an event (script `update` + `view` + native render) takes well under a frame for typical screens, and the engine starts in tens of milliseconds (Python's first launch also unpacks its standard library once).
 
 ### Known limits (be honest with your security team)
 
-- The script sandbox is opt-in (`VOLT_SANDBOX=1`). Without it, scripts can read anything the server user can.
-- Encryption between the app and server is TLS. There is no separate payload encryption layer, because a key baked into an APK can be extracted, so pinning adds more real protection.
-- State lives in SQLite on a single node. Scale vertically or shard apps across nodes. Running several replicas of one app needs a shared state store, which is not built in yet.
-- App logic runs on the server. Offline, the app shows the last cached screen and queues taps (`offlineQueue`), but nothing new is computed until it reconnects.
-- Push without Firebase is polling-based. Delivery to a closed app waits for the next background run (Android allows one every 15 minutes or more), so it is not instant like FCM. For instant delivery, add the Firebase SDK as a plugin jar.
-- Not built in, but available through plugins: NFC, QR scanning (drop a ZXing jar into `native/libs`), payments, maps SDKs and other vendor SDKs.
-- Uploads are stored in `data/uploads/` under unguessable names and deleted after `VOLT_UPLOAD_DAYS` (default 30; `0` keeps them forever).
+- APK size depends on the language, per CPU type: Lua +0.3 MB, JavaScript +1 MB, Ruby +1 MB, PHP +6.9 MB, Python +12 MB plus a 7 MB standard library. Set `VOLT_ABIS=arm64-v8a` to ship only for modern phones, or build an `.aab` so Play delivers one CPU type per device.
+- Python apps can use the standard library. Packages with C extensions (numpy and others) need to be built for Android first. Pure-Python packages can be copied into the app folder.
+- PHP is built with a minimal extension set (json, mbstring, ctype, filter, tokenizer, date, pcre). It has no database drivers or curl; use `android.http(...)` instead.
+- Ruby is mruby, which has no gems from rubygems.org and no regular expressions. The core language, `require_relative` and JSON work.
+- Script code inside an APK can be read by anyone who unpacks it, as with any app. Keep secrets on a server.
+- Native code (plugins, engines) can't be updated over the air. That needs a new APK.
+- Not built in, but available through plugins: NFC, QR scanning (drop a ZXing jar into `native/libs`), payments, maps SDKs, Firebase push.
 
 ## Test status
 
-- **Verified on an Android 15 emulator:** every component, styling, tabs, dialogs, charts, canvas, web views, Java/Kotlin/C plugins, camera, GPS, notifications and reminders, device storage, offline cache and offline queue replay, background jobs, push to a closed app, Bluetooth permissions, infinite lists, live reload.
-- **Verified `.aab` builds:** a bundle built with bundletool 1.18.3 passes `bundletool validate`, is signed, and converts to an installable APK with the right package, version and SDK levels.
-- **Verified on the server:** all app tests (`volt.py test --all`), sandbox isolation, HTTPS enforcement for production builds, about 2,400 events/s under load.
-- **Not yet verified:** video playback on a real network, a Play Console upload, the Docker image, and the GitHub Actions pipeline. Reports and pull requests welcome.
+Verified on an Android 16 emulator (arm64), with the network turned off:
+- **All five languages:** each app rendered and handled taps: Lua to-do, JavaScript calculator with a multi-file `require`, Python counter, Ruby counter and PHP tip splitter.
+- **State:** the Lua app's state survived a full app restart.
+- **Direct Android calls from JavaScript:** device, storage, clipboard and toast.
+
+With the network on:
+- **Live dev reload:** an edit appeared on the phone in about 2 seconds.
+- **Over-the-air update:** a signed bundle was accepted and its new code ran.
+- **Wrong key:** a bundle signed with a different key was rejected, and the app kept its built-in code.
+
+Earlier in the project, verified on the emulator: components, styling, tabs, dialogs, charts, canvas, web views, Java/Kotlin/C plugins, camera, GPS, notifications and reminders, background jobs, Bluetooth permissions and infinite lists. `.aab` builds pass `bundletool validate`.
+
+**Not yet verified:**
+- A physical phone and a 32-bit (armeabi-v7a) build.
+- After the move to on-device engines: camera, GPS and background jobs (re-tested only before the move), and Python packages beyond the standard library.
+- A Play Console upload, the Docker image and the GitHub Actions pipeline.
 
 ## How it works
 
 ```
- phone (native renderer)  ──HTTP──▶  volt.py  ──stdin/stdout JSON──▶  warm worker (lua/python/php/node/ruby)
-          ▲                             │ file watcher bumps the version
-          └──────── long-poll /watch ◀──┘ every client re-renders instantly
+ APK: native renderer (Java)  ◀── JSON screen ──  engine: libvolt_<lang>.so  ──▶  your main.lua / .js / .py / .rb / .php
+        │                                              ▲          │
+        └── tap / change / result event ───────────────┘          └── android.* ──▶ device APIs and your plugins (JNI)
+
+ optional: dev server ── code files ──▶ phone (live reload)        update host ── signed .zip ──▶ phone (OTA)
 ```
 
-Session state lives on the server, so a code reload swaps in the new logic while keeping each user's state. When a script fails, a red error screen with the traceback is pushed to every device, and it clears as soon as you fix the code.
+Each event calls your script's `update` and `view` inside the engine on the phone. The returned JSON becomes native views, and `_effect` keys trigger device actions. State is saved encrypted on the device after every event. When a script fails, a red error screen with the traceback appears. In dev builds, it clears as soon as you fix the code and save.
 
 ## Layout
 
 ```
-volt.py              server, CLI, APK builder, releases, auth
-runtimes/harness.*   one tiny bridge per language
+volt.py              CLI, APK/AAB/AAR builder, dev server, releases, signed bundles
+android/engine/      on-device engines: JNI bridge, per-language adapters, harnesses, prebuilt .so files
+runtimes/harness.*   preview bridges used by the web IDE and tests
 web/index.html       IDE + phone preview
-android/             native renderer (plain Java, no AndroidX)
+android/src/         native renderer + dev.volt.engine.VoltEngine (plain Java, no AndroidX)
 templates/           starter app for each language
 apps/<app>/          main.<ext>, lib/, assets/, tests/
 data/                runtime data (gitignored)

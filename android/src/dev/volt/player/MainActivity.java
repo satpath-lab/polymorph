@@ -87,6 +87,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import dev.volt.engine.VoltEngine;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -101,7 +102,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    String server = "", app = "", session, token = "", channel = "dev";
+    static volatile MainActivity alive;
+    String server = "", app = "", session, token = "", channel = "dev", source = "bundled";
+    VoltEngine engine;
+    Object state;
+    File appDir;
     boolean locked, started, hasContent;
     volatile boolean watching;
     volatile long ver = -1;
@@ -141,7 +146,6 @@ public class MainActivity extends Activity {
     JSONObject lastScreen;
     AlertDialog dialog;
     String dialogKey;
-    JSONArray outbox = new JSONArray();
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -153,35 +157,72 @@ public class MainActivity extends Activity {
         setContentView(host);
         session = prefs.getString("sid", null);
         if (session == null) { session = UUID.randomUUID().toString(); prefs.edit().putString("sid", session).apply(); }
-        try {
-            JSONObject cfg = new JSONObject(readAll(getAssets().open("volt.json")));
-            server = cfg.optString("server"); app = cfg.optString("app"); token = cfg.optString("token"); channel = cfg.optString("channel", "dev");
-        } catch (Exception ignored) {}
+        JSONObject cfg = VoltApp.cfg(this);
+        server = cfg.optString("dev"); app = cfg.optString("app"); token = cfg.optString("token"); source = cfg.optString("source", "bundled");
         locked = !app.isEmpty();
-        if (!locked) { channel = "dev"; server = prefs.getString("server", server); app = prefs.getString("app", ""); }
+        if (!locked) { source = "dev"; server = prefs.getString("server", server); app = prefs.getString("app", ""); }
+        VoltEngine.setHandler(hostHandler);
+        alive = this;
         if (app.isEmpty()) showConnect(); else start();
     }
 
-    @Override protected void onStart() { super.onStart(); if (started && !watching) { send(null); startWatch(); } }
+    @Override protected void onStart() { super.onStart(); alive = this; if (started && !watching && "dev".equals(source)) startWatch(); }
     @Override protected void onStop() { super.onStop(); watching = false; }
-    @Override protected void onDestroy() { super.onDestroy(); watching = false; net.shutdownNow(); imgPool.shutdownNow(); }
+    @Override protected void onDestroy() {
+        super.onDestroy(); watching = false; if (alive == this) alive = null;
+        net.execute(() -> { if (engine != null) engine.close(); engine = null; });
+        net.shutdown(); imgPool.shutdownNow();
+    }
 
     void start() {
         started = true; hasContent = false; ver = -1;
-        prefs.edit().putString("bg:server", server).putString("bg:app", app).putString("bg:channel", channel).putString("bg:token", token).apply();
+        prefs.edit().putString("bg:app", app).putString("bg:source", source).apply();
         setTitle(app);
         host.removeAllViews();
-        try { outbox = new JSONArray(VoltSecure.dec(prefs.getString("outbox:" + app + ":" + channel, null), "[]")); } catch (Exception e) { outbox = new JSONArray(); }
-        String cached = !VoltSecure.on("cacheScreens", true) ? null : VoltSecure.dec(prefs.getString("ui:" + app + ":" + channel, null), null);
+        String cached = !VoltSecure.on("cacheScreens", true) ? null : VoltSecure.dec(prefs.getString("ui:" + app, null), null);
         boolean shown = false;
         if (cached != null) try { render(new JSONObject(cached)); shown = true; } catch (Exception ignored) {}
-        if (!shown) {
-            ProgressBar pb = new ProgressBar(this);
-            host.addView(pb, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        }
-        send(null);
-        startWatch();
+        if (!shown) host.addView(new ProgressBar(this), new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        state = VoltApp.loadState(this, app);
+        net.execute(() -> {
+            try {
+                if ("dev".equals(source)) syncDev();
+                else if ("remote".equals(source) && remoteDue()) {
+                    try { VoltApp.updateRemote(this); } catch (Exception e) { android.util.Log.w("Volt", "script update failed: " + e); }
+                }
+                openEngine();
+                main.post(() -> send(null));
+            } catch (final Exception e) { main.post(() -> showError(e)); }
+        });
+        if ("dev".equals(source)) startWatch();
         handleTap(getIntent());
+    }
+
+    boolean remoteDue() {
+        String check = VoltApp.cfg(this).optString("check", "launch");
+        if (VoltApp.prefs(this).getString("remote:dir", null) == null || check.equals("launch")) return true;
+        try { return System.currentTimeMillis() - VoltApp.prefs(this).getLong("remote:at", 0) > Long.parseLong(check) * 60000L; } catch (Exception e) { return true; }
+    }
+
+    void openEngine() throws Exception {
+        File d = VoltApp.scripts(this, source);
+        String m = VoltApp.mainFile(d);
+        if (m == null) throw new Exception("No main.lua / main.js / main.py / main.rb / main.php found");
+        if (engine != null) { engine.close(); engine = null; }
+        engine = VoltEngine.open(this, d, m);
+        appDir = d;
+    }
+
+    void syncDev() throws Exception {
+        byte[] z = VoltApp.get(server + "/api/bundle/" + app + "?ch=dev", token, null);
+        VoltApp.unzip(z, new File(VoltApp.root(this), "dev"));
+    }
+
+    void reload(final boolean sync) {
+        net.execute(() -> {
+            try { if (sync) syncDev(); openEngine(); main.post(() -> send(null)); }
+            catch (final Exception e) { main.post(() -> showError(e)); }
+        });
     }
 
     void startWatch() {
@@ -191,14 +232,11 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             while (watching && watchApp.equals(app)) {
                 try {
-                    if (ver < 0) { Thread.sleep(150); continue; }
-                    if (VoltSecure.on("push", true)) try { VoltJob.inbox(getApplicationContext()); } catch (Exception ignored) {}
-                    JSONObject r = http("GET", "/api/watch/" + watchApp + "?ch=" + channel + "&v=" + ver, null, 35000);
+                    JSONObject r = http("GET", "/api/watch/" + watchApp + "?ch=dev&v=" + ver, null, 35000);
                     long v = r.optLong("v", ver);
-                    if (outbox.length() > 0 && v == ver) send(null);
-                    if (v != ver && watching) { ver = v; send(null); }
+                    if (v != ver && watching) { boolean first = ver < 0; ver = v; if (!first) reload(true); }
                 } catch (Exception e) {
-                    try { Thread.sleep(1500); } catch (InterruptedException ie) { return; }
+                    try { Thread.sleep(2000); } catch (InterruptedException ie) { return; }
                 }
             }
         }, "volt-watch").start();
@@ -222,31 +260,34 @@ public class MainActivity extends Activity {
         final String a = app;
         net.execute(() -> {
             try {
-                while (outbox.length() > 0) {
-                    JSONObject qb = new JSONObject().put("session", session).put("event", outbox.getJSONObject(0));
-                    final JSONObject qr = http("POST", "/api/run/" + a + "?ch=" + channel, qb.toString(), 20000);
-                    outbox.remove(0); saveOutbox();
-                    if (outbox.length() == 0 && ev == null) main.post(() -> { if (a.equals(app)) apply(qr); });
-                }
-                JSONObject body = new JSONObject();
-                body.put("session", session);
-                body.put("event", ev == null ? JSONObject.NULL : ev);
-                final JSONObject r = http("POST", "/api/run/" + a + "?ch=" + channel, body.toString(), 20000);
-                main.post(() -> { if (a.equals(app)) apply(r); });
-            } catch (final IOException e) {
-                if (ev != null && hasContent && VoltSecure.on("offlineQueue", true)) {
-                    try { ev.put("queuedAt", System.currentTimeMillis()); } catch (Exception ignored) {}
-                    outbox.put(ev); saveOutbox();
-                    final int n = outbox.length();
-                    main.post(() -> Toast.makeText(this, "Offline: action saved (" + n + " waiting)", Toast.LENGTH_SHORT).show());
-                } else main.post(() -> showError(e));
+                if (engine == null) return;
+                long t0 = System.nanoTime();
+                JSONObject r = engine.step(state, ev);
+                Object st = r.opt("state");
+                final JSONObject fx = VoltApp.split(st);
+                state = st;
+                VoltApp.saveState(this, a, st);
+                final JSONObject res = new JSONObject().put("ui", r.opt("ui")).put("fx", fx);
+                if ("dev".equals(source)) android.util.Log.d("Volt", "step " + (System.nanoTime() - t0) / 1000 + "us");
+                main.post(() -> { if (a.equals(app)) apply(res); });
+            } catch (final VoltEngine.ScriptError e) {
+                main.post(() -> showScriptError(e.getMessage()));
             } catch (final Exception e) {
                 main.post(() -> showError(e));
             }
         });
     }
 
-    void saveOutbox() { prefs.edit().putString("outbox:" + app + ":" + channel, VoltSecure.enc(outbox.toString())).apply(); }
+    void showScriptError(String msg) {
+        try {
+            JSONObject screen = new JSONObject().put("title", "Script error").put("accent", "#B91C1C").put("bg", "#FEF2F2")
+                .put("body", new JSONObject().put("type", "column").put("padding", 20).put("gap", 12).put("children", new JSONArray()
+                    .put(new JSONObject().put("type", "text").put("text", "⚠ Your script failed").put("size", 20).put("bold", true).put("color", "#B91C1C"))
+                    .put(new JSONObject().put("type", "text").put("text", msg).put("mono", true).put("size", 12).put("color", "#7F1D1D").put("selectable", true))
+                    .put(new JSONObject().put("type", "text").put("text", "dev".equals(source) ? "Fix the code and save. The app reloads by itself." : "Use the menu to reload or reset.").put("color", "#6B7280"))));
+            render(screen);
+        } catch (Exception ignored) {}
+    }
 
     JSONObject http(String method, String path, String body, int timeout) throws Exception {
         HttpURLConnection c = VoltSecure.open(server + path);
@@ -276,10 +317,9 @@ public class MainActivity extends Activity {
     }
 
     void apply(JSONObject r) {
-        ver = r.optLong("v", ver);
         JSONObject ui = r.optJSONObject("ui");
         if (ui != null && !VoltSecure.on("cacheScreens", true)) render(ui);
-        else if (ui != null) { render(ui); prefs.edit().putString("ui:" + app + ":" + channel, VoltSecure.enc(ui.toString())).apply(); }
+        else if (ui != null) { render(ui); prefs.edit().putString("ui:" + app, VoltSecure.enc(ui.toString())).apply(); }
         JSONObject fx = r.optJSONObject("fx");
         if (fx == null) return;
         if (fx.has("toast")) Toast.makeText(this, fx.optString("toast"), Toast.LENGTH_SHORT).show();
@@ -567,14 +607,18 @@ public class MainActivity extends Activity {
                 iv.setClipToOutline(true);
                 bg(iv, color(n.optString("bg", ""), 0xFFE5E7EB), n.optDouble("radius", 12));
                 String src = n.optString("src", "");
-                final String url = src.startsWith("http") ? src : server + (src.startsWith("/") ? "" : "/apps/" + app + "/assets/") + src + (src.startsWith("/") ? "" : "?ch=" + channel);
+                final String url = src.startsWith("http") ? src : src.startsWith("file://") ? src.substring(7) : src.startsWith("/") ? src : appDir == null ? "" : new File(new File(appDir, "assets"), src).getPath();
                 Bitmap cached = images.get(url);
                 if (cached != null) iv.setImageBitmap(cached);
                 else if (!src.isEmpty()) imgPool.execute(() -> {
                     try {
-                        HttpURLConnection c = VoltSecure.open(url);
-                        c.setConnectTimeout(6000); c.setReadTimeout(15000);
-                        final Bitmap bm = BitmapFactory.decodeStream(c.getInputStream());
+                        Bitmap bm0;
+                        if (url.startsWith("http")) {
+                            HttpURLConnection c = VoltSecure.open(url);
+                            c.setConnectTimeout(6000); c.setReadTimeout(15000);
+                            bm0 = BitmapFactory.decodeStream(c.getInputStream());
+                        } else bm0 = BitmapFactory.decodeFile(url);
+                        final Bitmap bm = bm0;
                         if (bm != null) { images.put(url, bm); main.post(() -> iv.setImageBitmap(bm)); }
                     } catch (Exception ignored) {}
                 });
@@ -714,14 +758,19 @@ public class MainActivity extends Activity {
                 usedKeep.add(key);
                 if (!sig.equals(keepSig.get(key))) {
                     keepSig.put(key, sig);
-                    if (n.has("html")) wv.loadDataWithBaseURL(server + "/", n.optString("html"), "text/html", "utf-8", null);
-                    else { String u = n.optString("url"); wv.loadUrl(u.startsWith("http") ? u : server + (u.startsWith("/") ? "" : "/apps/" + app + "/assets/") + u); }
+                    String assetBase = appDir == null ? "about:blank" : "file://" + new File(appDir, "assets").getPath() + "/";
+                    if (n.has("html")) { wv.getSettings().setAllowFileAccess(true); wv.loadDataWithBaseURL(n.optString("base", assetBase), n.optString("html"), "text/html", "utf-8", null); }
+                    else {
+                        String u = n.optString("url");
+                        if (!u.startsWith("http")) wv.getSettings().setAllowFileAccess(true);
+                        wv.loadUrl(u.startsWith("http") || u.startsWith("file:") ? u : assetBase + u);
+                    }
                 }
                 v = wv; break;
             }
             case "video": {
                 String src = n.optString("src", "");
-                final String url = src.startsWith("http") ? src : server + (src.startsWith("/") ? "" : "/apps/" + app + "/assets/") + src;
+                final String url = src.startsWith("http") || src.startsWith("file:") ? src : src.startsWith("/") ? "file://" + src : appDir == null ? "" : "file://" + new File(new File(appDir, "assets"), src).getPath();
                 String key = "video:" + (id.isEmpty() ? url.hashCode() : id);
                 VideoView vv = (VideoView) keep.get(key);
                 if (vv == null) {
@@ -902,9 +951,9 @@ public class MainActivity extends Activity {
     }
 
     void showError(Exception e) {
-        if (hasContent) { Toast.makeText(this, "Offline: showing last screen", Toast.LENGTH_SHORT).show(); return; }
-        LinearLayout ll = form("Can't reach server");
-        TextView t = new TextView(this); t.setText(server + "\n\n" + e.getMessage()); t.setTextColor(0xFF6B7280);
+        if (hasContent && engine != null) { Toast.makeText(this, String.valueOf(e.getMessage()), Toast.LENGTH_SHORT).show(); return; }
+        LinearLayout ll = form("dev".equals(source) ? "Can't reach the dev server" : "Couldn't start the app");
+        TextView t = new TextView(this); t.setText(("dev".equals(source) ? server + "\n\n" : "") + e); t.setTextColor(0xFF6B7280);
         ll.addView(t);
         Button retry = primary("Retry"); retry.setOnClickListener(x -> start()); ll.addView(retry, wide());
         if (!locked) { Button sw = primary("Change server / app"); sw.setOnClickListener(x -> showConnect()); ll.addView(sw, wide()); }
@@ -915,7 +964,7 @@ public class MainActivity extends Activity {
         watching = false; started = false; hasContent = false;
         setTitle("VoltForge");
         LinearLayout ll = form("⚡ VoltForge");
-        TextView sub = new TextView(this); sub.setText("Connect to your VoltForge server"); sub.setTextColor(0xFF6B7280); ll.addView(sub);
+        TextView sub = new TextView(this); sub.setText("Connect to your computer running `volt.py serve`. Code is downloaded and runs on this phone."); sub.setTextColor(0xFF6B7280); ll.addView(sub);
         final EditText url = new EditText(this);
         url.setSingleLine(true); url.setHint("http://192.168.1.10:8787");
         url.setText(server.isEmpty() ? "http://10.0.2.2:8787" : server);
@@ -934,7 +983,7 @@ public class MainActivity extends Activity {
                             final JSONObject a = arr.optJSONObject(i);
                             Button b = primary(a.optString("name") + "   ·   " + a.optString("lang"));
                             b.setOnClickListener(y -> {
-                                app = a.optString("name");
+                                app = a.optString("name"); source = "dev"; state = null;
                                 prefs.edit().putString("server", server).putString("app", app).apply();
                                 inputViews.clear(); inputs.clear(); lastServerVal.clear();
                                 start();
@@ -987,9 +1036,9 @@ public class MainActivity extends Activity {
     }
 
     @Override public boolean onOptionsItemSelected(MenuItem i) {
-        if (i.getItemId() == 1 && started) send(null);
+        if (i.getItemId() == 1 && started) reload("dev".equals(source));
         else if (i.getItemId() == 2 && started) net.execute(() -> {
-            try { http("POST", "/api/reset/" + app + "?ch=" + channel, new JSONObject().put("session", session).toString(), 8000); } catch (Exception ignored) {}
+            state = null; VoltApp.saveState(this, app, null);
             main.post(() -> { inputViews.clear(); inputs.clear(); lastServerVal.clear(); send(null); });
         });
         else if (i.getItemId() == 3) showConnect();
@@ -1056,22 +1105,13 @@ public class MainActivity extends Activity {
                 else if (bg != null && bg.optBoolean("on", true)) { prefs.edit().putBoolean("bg:on", true).apply(); VoltJob.schedule(this, bg.optInt("every", 15)); }
                 else { prefs.edit().putBoolean("bg:on", false).apply(); VoltJob.cancel(this); }
             }
-            if (fx.has("store")) {
-                JSONObject cur = store(), up = fx.optJSONObject("store");
-                if (up != null) {
-                    Iterator<String> it = up.keys();
-                    while (it.hasNext()) { String k = it.next(); if (up.isNull(k)) cur.remove(k); else cur.put(k, up.get(k)); }
-                    prefs.edit().putString("store:" + app, VoltSecure.enc(cur.toString())).apply();
-                }
-            }
+            if (fx.has("store") && fx.optJSONObject("store") != null) VoltApp.putStore(this, app, fx.optJSONObject("store"));
         } catch (Exception e) {
             Toast.makeText(this, "Native action failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
-    JSONObject store() {
-        try { return new JSONObject(VoltSecure.dec(prefs.getString("store:" + app, null), "{}")); } catch (Exception e) { return new JSONObject(); }
-    }
+    JSONObject store() { return VoltApp.store(this, app); }
 
     JSONObject device() {
         JSONObject d = new JSONObject();
@@ -1184,15 +1224,11 @@ public class MainActivity extends Activity {
     }
 
     void upload(String id, byte[] bytes, String type, String name) throws Exception {
-        HttpURLConnection c = VoltSecure.open(server + "/api/upload/" + app + "?ch=" + channel + "&name=" + Uri.encode(name));
-        c.setRequestMethod("POST"); c.setConnectTimeout(8000); c.setReadTimeout(60000); c.setDoOutput(true);
-        c.setRequestProperty("Content-Type", type);
-        if (!token.isEmpty()) c.setRequestProperty("X-Volt-Token", token);
-        c.setFixedLengthStreamingMode(bytes.length);
-        OutputStream os = c.getOutputStream(); os.write(bytes); os.close();
-        int code = c.getResponseCode();
-        String s = readAll(code < 400 ? c.getInputStream() : c.getErrorStream());
-        result(id, code < 400 ? new JSONObject(s) : err("upload failed: " + s));
+        File dir = new File(getFilesDir(), "media"); dir.mkdirs();
+        String ext = name.contains(".") ? name.substring(name.lastIndexOf('.')).replaceAll("[^A-Za-z0-9.]", "") : type.equals("image/jpeg") ? ".jpg" : "";
+        File f = new File(dir, UUID.randomUUID().toString().replace("-", "") + ext);
+        try (OutputStream os = new java.io.FileOutputStream(f)) { os.write(bytes); }
+        result(id, new JSONObject().put("url", "file://" + f.getAbsolutePath()).put("path", f.getAbsolutePath()).put("type", type).put("size", bytes.length).put("name", name));
     }
 
     boolean granted(String p) { return checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED; }
@@ -1381,13 +1417,9 @@ public class MainActivity extends Activity {
         if (!fontLoading.add(name)) return;
         imgPool.execute(() -> {
             try {
-                File f = new File(getCacheDir(), "font-" + name.replaceAll("[^A-Za-z0-9_-]", "_") + ".ttf");
-                if (!f.exists() || f.length() == 0) {
-                    String file = name.contains(".") ? name : name + ".ttf";
-                    HttpURLConnection c = VoltSecure.open(server + "/apps/" + app + "/assets/fonts/" + file + "?ch=" + channel);
-                    byte[] data = readBytes(c.getInputStream());
-                    java.io.FileOutputStream fo = new java.io.FileOutputStream(f); fo.write(data); fo.close();
-                }
+                String file = name.contains(".") ? name : name + ".ttf";
+                File f = new File(new File(new File(appDir, "assets"), "fonts"), file);
+                if (!f.exists() && !file.endsWith(".otf")) f = new File(f.getParentFile(), name + ".otf");
                 final Typeface loaded = Typeface.createFromFile(f);
                 main.post(() -> { fonts.put(name, loaded); if (lastScreen != null) render(lastScreen); });
             } catch (Exception e) { fontLoading.remove(name); }
@@ -1414,4 +1446,108 @@ public class MainActivity extends Activity {
         return o;
     }
     final Map<String, Object> viewPlugins = new HashMap<>();
+
+    // ---------------------------------------------------------------- direct Android calls from scripts
+    final VoltEngine.Handler hostHandler = new VoltEngine.Handler() {
+        public void log(String text) {}
+        public Object call(String plugin, String method, JSONObject args) throws Exception { return hostCall(plugin, method, args); }
+    };
+
+    Object onMain(final java.util.concurrent.Callable<Object> c) throws Exception {
+        if (Looper.myLooper() == Looper.getMainLooper()) return c.call();
+        final Object[] box = new Object[2];
+        final java.util.concurrent.CountDownLatch l = new java.util.concurrent.CountDownLatch(1);
+        main.post(() -> { try { box[0] = c.call(); } catch (Throwable t) { box[1] = t; } l.countDown(); });
+        l.await();
+        if (box[1] != null) throw new Exception(((Throwable) box[1]).getMessage());
+        return box[0];
+    }
+
+    Object hostCall(String plugin, String method, final JSONObject args) throws Exception {
+        switch (plugin) {
+            case "toast": return onMain(() -> { Toast.makeText(this, args.optString("text", method), Toast.LENGTH_SHORT).show(); return null; });
+            case "device": return device();
+            case "storage":
+                if (method.equals("get")) return store().opt(args.optString("key"));
+                if (method.equals("all")) return store();
+                if (method.equals("set")) { VoltApp.putStore(this, app, new JSONObject().put(args.optString("key"), args.opt("value") == null ? JSONObject.NULL : args.opt("value"))); return true; }
+                if (method.equals("remove")) { VoltApp.putStore(this, app, new JSONObject().put(args.optString("key"), JSONObject.NULL)); return true; }
+                break;
+            case "clipboard":
+                return onMain(() -> {
+                    ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (method.equals("set")) { cm.setPrimaryClip(ClipData.newPlainText("text", args.optString("text"))); return true; }
+                    ClipData d = cm.getPrimaryClip();
+                    return d == null || d.getItemCount() == 0 ? JSONObject.NULL : String.valueOf(d.getItemAt(0).coerceToText(this));
+                });
+            case "vibrate": {
+                Vibrator vb = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+                long ms = args.optLong("ms", 30);
+                if (vb != null) { if (Build.VERSION.SDK_INT >= 26) vb.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)); else vb.vibrate(ms); }
+                return true;
+            }
+            case "http": return httpCall(method, args);
+            case "files": return filesCall(method, args);
+            case "open": return onMain(() -> { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(args.optString("url", method)))); return true; });
+            case "app":
+                if (method.equals("info")) return new JSONObject().put("app", app).put("source", source).put("dir", appDir == null ? "" : appDir.getPath()).put("lang", engine == null ? "" : engine.lang);
+                if (method.equals("update")) { boolean changed = "remote".equals(source) && VoltApp.updateRemote(this); if (changed) reload(false); return changed; }
+                break;
+        }
+        return pluginSync(plugin, method, args);
+    }
+
+    Object httpCall(String method, JSONObject a) throws Exception {
+        String url = a.optString("url", method);
+        HttpURLConnection c = VoltSecure.open(url);
+        c.setRequestMethod(a.optString("method", "GET").toUpperCase(Locale.US));
+        c.setConnectTimeout(a.optInt("timeout", 15000)); c.setReadTimeout(a.optInt("timeout", 15000));
+        JSONObject hd = a.optJSONObject("headers");
+        if (hd != null) { Iterator<String> it = hd.keys(); while (it.hasNext()) { String k = it.next(); c.setRequestProperty(k, hd.optString(k)); } }
+        Object body = a.opt("body");
+        if (body != null && body != JSONObject.NULL) {
+            byte[] b = (body instanceof String ? (String) body : body.toString()).getBytes("UTF-8");
+            if (!(body instanceof String) && (hd == null || !hd.has("Content-Type"))) c.setRequestProperty("Content-Type", "application/json");
+            c.setDoOutput(true); c.setFixedLengthStreamingMode(b.length);
+            try (OutputStream os = c.getOutputStream()) { os.write(b); }
+        }
+        int code = c.getResponseCode();
+        InputStream in = code < 400 ? c.getInputStream() : c.getErrorStream();
+        String text = in == null ? "" : readAll(in);
+        JSONObject headers = new JSONObject();
+        for (Map.Entry<String, List<String>> e : c.getHeaderFields().entrySet()) if (e.getKey() != null) headers.put(e.getKey().toLowerCase(Locale.US), android.text.TextUtils.join(", ", e.getValue()));
+        JSONObject r = new JSONObject().put("status", code).put("ok", code < 400).put("body", text).put("headers", headers);
+        if (a.optBoolean("json")) try { r.put("json", new org.json.JSONTokener(text).nextValue()); } catch (Exception ignored) {}
+        return r;
+    }
+
+    Object filesCall(String method, JSONObject a) throws Exception {
+        File base = new File(getFilesDir(), "user"); base.mkdirs();
+        String rel = a.optString("path", "");
+        File f = new File(base, rel);
+        if (!f.getCanonicalPath().startsWith(base.getCanonicalPath())) throw new SecurityException("path outside app storage");
+        switch (method) {
+            case "read": return f.exists() ? new String(readBytes(new FileInputStream(f)), "UTF-8") : JSONObject.NULL;
+            case "write": { f.getParentFile().mkdirs(); try (OutputStream os = new java.io.FileOutputStream(f, a.optBoolean("append"))) { os.write(a.optString("text").getBytes("UTF-8")); } return true; }
+            case "delete": VoltApp.delete(f); return true;
+            case "exists": return f.exists();
+            case "list": { JSONArray out = new JSONArray(); String[] k = f.list(); if (k != null) for (String x : k) out.put(x); return out; }
+            case "path": return f.getAbsolutePath();
+        }
+        throw new Exception("files." + method + " is not supported");
+    }
+
+    Object pluginSync(String name, String method, JSONObject args) throws Exception {
+        final VoltPlugin p = (VoltPlugin) onMain(() -> plugin(name));
+        final Object[] box = new Object[2];
+        final java.util.concurrent.CountDownLatch l = new java.util.concurrent.CountDownLatch(1);
+        final VoltPlugin.Result res = new VoltPlugin.Result() {
+            public void ok(Object value) { if (l.getCount() == 0) return; box[0] = value; l.countDown(); }
+            public void error(String m) { if (l.getCount() == 0) return; box[1] = m == null ? "failed" : m; l.countDown(); }
+        };
+        main.post(() -> { try { p.call(pluginHost, method, args, res); } catch (Throwable t) { res.error(t.getClass().getSimpleName() + ": " + t.getMessage()); } });
+        if (!l.await(120, java.util.concurrent.TimeUnit.SECONDS)) throw new Exception(name + "." + method + " timed out");
+        if (box[1] != null) throw new Exception(String.valueOf(box[1]));
+        return box[0];
+    }
 }

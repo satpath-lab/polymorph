@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """VoltForge — live-scripted native Android apps in Lua, Python, PHP, JavaScript or Ruby."""
-import argparse, collections, getpass, hashlib, hmac, io, json, os, queue, re, secrets, shutil, socket, sqlite3, subprocess, sys, tarfile, tempfile, threading, time, zipfile
+import argparse, collections, glob, getpass, hashlib, hmac, io, json, os, queue, re, secrets, shutil, socket, sqlite3, subprocess, sys, tarfile, tempfile, threading, time, zipfile
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 
@@ -455,6 +455,51 @@ def deploy(name, n, user):
     audit(user, "deploy" if prev is None or n > prev else "rollback", name, "r%s → r%d" % (prev or "-", n))
 
 
+BUNDLE_SKIP = {"tests", "native", "__pycache__", "node_modules", ".git"}
+
+
+def bundle_bytes(d):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for base, dirs, files in os.walk(d):
+            dirs[:] = sorted(x for x in dirs if x not in BUNDLE_SKIP and not x.startswith("."))
+            for f in sorted(files):
+                if f.startswith(".") or f.endswith(".pyc"): continue
+                full = os.path.join(base, f)
+                zi = zipfile.ZipInfo(os.path.relpath(full, d).replace(os.sep, "/"), (2020, 1, 1, 0, 0, 0))
+                zi.compress_type = zipfile.ZIP_DEFLATED
+                z.writestr(zi, open(full, "rb").read())
+    return buf.getvalue()
+
+
+def bundle_key():
+    k = os.path.join(DATA, "bundle-signing.pem")
+    if not os.path.exists(k):
+        os.makedirs(DATA, exist_ok=True)
+        sh(["openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", k]); os.chmod(k, 0o600)
+    return k
+
+
+def bundle_pubkey():
+    import base64
+    der = subprocess.run(["openssl", "ec", "-in", bundle_key(), "-pubout", "-outform", "DER"], capture_output=True, check=True).stdout
+    return base64.b64encode(der).decode()
+
+
+def bundle_sign(data):
+    import base64
+    with tempfile.NamedTemporaryFile(delete=False) as f: f.write(data); tmp = f.name
+    try: sig = subprocess.run(["openssl", "dgst", "-sha256", "-sign", bundle_key(), tmp], capture_output=True, check=True).stdout
+    finally: os.unlink(tmp)
+    return base64.b64encode(sig).decode()
+
+
+def release_dir(name):
+    n = deployed(name)
+    d = os.path.join(RELEASES, name, str(n)) if n else None
+    return d if d and os.path.isdir(d) else app_dir(name)
+
+
 # ---------------------------------------------------------------- APK builder
 def sdk_paths():
     cands = [os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT"), os.path.expanduser("~/Library/Android/sdk"), os.path.expanduser("~/Android/Sdk")]
@@ -642,13 +687,49 @@ def build_aab(sdk, tmp, linked_args_apk, nat, out):
     return out
 
 
-def build_apk(app, server, label=None, out=None, channel="prod", fmt="apk"):
+ENGINE_LANG = {".lua": "lua", ".js": "js", ".py": "python", ".rb": "ruby", ".php": "php"}
+ENGINE_EXT = {"lua": "lua", "js": "js", "python": "py", "ruby": "rb", "php": "php"}
+
+
+def app_main(d):
+    for ext in ENGINE_LANG:
+        if os.path.exists(os.path.join(d, "main" + ext)): return "main" + ext
+    return None
+
+
+def engine_parts(langs):
+    so, assets = [], {}
+    for lang in langs:
+        d = os.path.join(ANDROID, "engine", "prebuilt", lang)
+        for abi in ABIS:
+            libs = sorted(glob.glob(os.path.join(d, abi, "*.so")))
+            if not libs: raise RuntimeError("the %s engine is not built for %s. Run: python3 android/engine/build_engines.py (see android/engine/README.md)" % (lang, abi))
+            so += [(abi, f) for f in libs]
+        assets["volt/harness." + ENGINE_EXT[lang]] = os.path.join(ANDROID, "engine", "harness", "harness." + ENGINE_EXT[lang])
+        if lang == "python": assets["volt/python.zip"] = os.path.join(d, "python.zip")
+    return so, assets
+
+
+def build_apk(app, dev=None, server=None, label=None, out=None, fmt="apk"):
     with build_lock:
         os.makedirs(BUILD, exist_ok=True)
         cfg = app_config(app); feats = cfg["features"]
-        if channel == "prod" and feats.get("requireHttps", True) and not server.startswith("https://") and not os.environ.get("VOLT_ALLOW_HTTP"):
-            raise RuntimeError("production builds must use an https:// server (set features.requireHttps=false in app.json or VOLT_ALLOW_HTTP=1 to override)")
+        upd = cfg.get("updates")
+        source = "dev" if dev or not app else "remote" if upd else "bundled"
+        url = (upd.get("url") if isinstance(upd, dict) else None) or (server and app and "%s/b/%s.zip" % (server.rstrip("/"), app)) or ""
+        if source == "remote":
+            if not url: raise RuntimeError('app.json "updates" needs a server: pass --server https://… or set updates.url')
+            if feats.get("requireHttps", True) and not url.startswith("https://") and not os.environ.get("VOLT_ALLOW_HTTP"):
+                raise RuntimeError("script updates must come from https:// (set features.requireHttps=false in app.json or VOLT_ALLOW_HTTP=1 to override)")
+        channel = "dev" if source == "dev" else "prod"
+        code = None
+        if app and source != "dev":
+            code = release_dir(app)
+            if not app_main(code): raise RuntimeError("no main.lua/js/py/rb/php in " + code)
+        langs = [ENGINE_LANG["." + app_main(code or app_dir(app)).split(".")[1]]] if app else [l for l in ("lua", "js", "python", "ruby", "php") if os.path.isdir(os.path.join(ANDROID, "engine", "prebuilt", l))]
+        eso, eassets = engine_parts(langs)
         sdk = sdk_paths(); nat = compile_native(sdk, app_dir(app) if app else None)
+        nat = dict(nat, so=nat["so"] + eso)
         for w in nat["warnings"]: print("⚠", w, file=sys.stderr)
         base_pkg = cfg.get("package") or ("dev.volt.player" if not app else "dev.volt.app." + (re.sub(r"[^a-z0-9]", "", app) or "x"))
         if not re.match(r"^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$", base_pkg): raise RuntimeError("invalid package id: " + base_pkg)
@@ -663,7 +744,7 @@ def build_apk(app, server, label=None, out=None, channel="prod", fmt="apk"):
                 .replace("{{LOCATION}}", perm(["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]) if feats.get("location") else "") \
                 .replace("{{NOTIFICATIONS}}", perm(["POST_NOTIFICATIONS"]) if feats.get("notifications") else "") \
                 .replace("{{BOOT}}", perm(["RECEIVE_BOOT_COMPLETED"]) if feats.get("backgroundJobs") else "") \
-                .replace("{{CLEARTEXT}}", "false" if server.startswith("https://") else "true") \
+                .replace("{{CLEARTEXT}}", "true" if (dev or "").startswith("http://") or url.startswith("http://") else "false") \
                 .replace("{{ORIENTATION}}", 'android:screenOrientation="%s" ' % orient if orient in ("portrait", "landscape", "sensor") else "")
             icon = cfg.get("icon") and os.path.join(app_dir(app), cfg["icon"])
             res_dir = os.path.join(tmp, "res"); shutil.copytree(os.path.join(ANDROID, "res"), res_dir)
@@ -674,8 +755,15 @@ def build_apk(app, server, label=None, out=None, channel="prod", fmt="apk"):
             open(os.path.join(tmp, "AndroidManifest.xml"), "w").write(man)
             os.makedirs(os.path.join(tmp, "assets"))
             pins = cfg.get("pins") or [p for p in os.environ.get("VOLT_PINS", "").split(",") if p]
-            json.dump({"server": server.rstrip("/"), "app": app or "", "channel": channel, "token": DEVICE_KEY, "pins": pins, "features": feats},
-                      open(os.path.join(tmp, "assets", "volt.json"), "w"))
+            vcfg = {"app": app or "", "source": source, "dev": (dev or "").rstrip("/"), "token": DEVICE_KEY, "pins": pins, "features": feats}
+            if source == "remote":
+                vcfg.update(url=url, check=str((upd.get("check") if isinstance(upd, dict) else None) or "launch"))
+                if not (isinstance(upd, dict) and upd.get("unsigned")): vcfg["publicKey"] = (upd.get("publicKey") if isinstance(upd, dict) else None) or bundle_pubkey()
+            json.dump(vcfg, open(os.path.join(tmp, "assets", "volt.json"), "w"))
+            for dst, src in eassets.items():
+                os.makedirs(os.path.dirname(os.path.join(tmp, "assets", dst)), exist_ok=True); shutil.copy(src, os.path.join(tmp, "assets", dst))
+            if code:
+                with zipfile.ZipFile(io.BytesIO(bundle_bytes(code))) as z: z.extractall(os.path.join(tmp, "assets", "app"))
             json.dump(nat["plugins"], open(os.path.join(tmp, "assets", "plugins.json"), "w"))
             sh([sdk["aapt2"], "compile", "--dir", res_dir, "-o", os.path.join(tmp, "res.zip")])
             un = os.path.join(tmp, "un.apk")
@@ -695,6 +783,27 @@ def build_apk(app, server, label=None, out=None, channel="prod", fmt="apk"):
             ks, pw = keystore()
             sh([sdk["apksigner"], "sign", "--ks", ks, "--ks-pass", "pass:" + pw, "--key-pass", "pass:" + pw, "--out", out, al])
         return out
+
+
+def build_aar(langs, out=None):
+    sdk = sdk_paths()
+    so, assets = engine_parts(langs)
+    out = out or os.path.join(BUILD, "voltengine.aar")
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = sorted(glob.glob(os.path.join(ANDROID, "src", "dev", "volt", "engine", "*.java")))
+        sh(["javac", "-nowarn", "-Xlint:-options", "-encoding", "UTF-8", "-source", "8", "-target", "8", "-bootclasspath", sdk["jar"], "-d", os.path.join(tmp, "c")] + src)
+        jar = os.path.join(tmp, "classes.jar")
+        with zipfile.ZipFile(jar, "w", zipfile.ZIP_DEFLATED) as z:
+            for base, _, files in os.walk(os.path.join(tmp, "c")):
+                for f in files: z.write(os.path.join(base, f), os.path.relpath(os.path.join(base, f), os.path.join(tmp, "c")))
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("AndroidManifest.xml", '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.volt.engine"><uses-sdk android:minSdkVersion="24"/></manifest>')
+            z.writestr("R.txt", "")
+            z.write(jar, "classes.jar")
+            for abi, f in so: z.write(f, "jni/%s/%s" % (abi, os.path.basename(f)))
+            for dst, f in assets.items(): z.write(f, "assets/" + dst)
+    return out
 
 
 # ---------------------------------------------------------------- HTTP
@@ -810,6 +919,15 @@ class H(BaseHTTPRequestHandler):
             if not os.path.isfile(f): raise Api(404, "not found")
             ct = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml"}.get(os.path.splitext(f)[1].lower(), "application/octet-stream")
             return self.send(200, open(f, "rb").read(), ct, {"Cache-Control": "max-age=60"})
+        if p[:1] == ["b"] and len(p) == 2 and re.match(r"^[a-z0-9][a-z0-9_-]*\.zip(\.sig)?$", p[1]):
+            self.device()
+            name = p[1].split(".")[0]
+            if not os.path.isdir(app_dir(name)): raise Api(404, "not found")
+            data = bundle_bytes(release_dir(name))
+            if p[1].endswith(".sig"): return self.send(200, bundle_sign(data), "text/plain", {"Cache-Control": "no-cache"})
+            tag = '"%s"' % hashlib.sha256(data).hexdigest()[:32]
+            if self.headers.get("If-None-Match") == tag: return self.send(304, b"", "application/zip", {"ETag": tag})
+            return self.send(200, data, "application/zip", {"ETag": tag, "Cache-Control": "no-cache"})
         if p[:1] != ["api"]: raise Api(404, "not found")
         r, name = (p[1] if len(p) > 1 else ""), (p[2] if len(p) > 2 else "")
 
@@ -885,10 +1003,12 @@ class H(BaseHTTPRequestHandler):
             if not b.get("text") and not b.get("title"): raise Api(400, "title or text required")
             queue_push(name, b.get("ch", "prod") if b.get("ch") in CHANNELS else "prod", b.get("session") or "*", b)
             audit(user, "push", name, "%s → %s: %s" % (b.get("ch", "prod"), b.get("session") or "all", b.get("title", ""))); return self.send(201, {"ok": True})
-        if r in ("run", "watch", "reset"):
+        if r in ("run", "watch", "reset", "bundle"):
             self.device()
             rt = get_rt(name, ch)
             if not rt: raise Api(404, "unknown app")
+            if r == "bundle":
+                return self.send(200, bundle_bytes(rt.dir), "application/zip", {"Cache-Control": "no-cache", "X-Volt-Version": str(rt.version)})
             if r == "run" and m == "POST":
                 b = self.body(); return self.send(200, rt.run(str(b.get("session") or "anon")[:64], b.get("event")))
             if r == "reset" and m == "POST":
@@ -962,7 +1082,8 @@ class H(BaseHTTPRequestHandler):
             if chan not in CHANNELS: raise Api(400, "bad channel")
             fmt = q.get("format", ["apk"])[0]
             if fmt not in ("apk", "aab"): raise Api(400, "format must be apk or aab")
-            path = build_apk(name, q.get("server", ["http://" + host])[0], q.get("label", [None])[0], None, chan, fmt)
+            srv = q.get("server", ["http://" + host])[0].rstrip("/")
+            path = build_apk(name, dev=srv if chan == "dev" else None, server=srv, label=q.get("label", [None])[0], fmt=fmt)
             audit(user, "%s.build" % fmt, name, chan)
             return self.send(200, open(path, "rb").read(), "application/vnd.android.package-archive" if fmt == "apk" else "application/octet-stream",
                              {"Content-Disposition": 'attachment; filename="%s-%s.%s"' % (name, chan, fmt)})
@@ -1008,7 +1129,12 @@ def main():
     r = sub.add_parser("release", help="snapshot an app as a release (tests must pass)"); r.add_argument("name"); r.add_argument("--note", default=""); r.add_argument("--deploy", action="store_true"); r.add_argument("--force", action="store_true")
     d = sub.add_parser("deploy", help="point production at a release (deploy or rollback)"); d.add_argument("name"); d.add_argument("n", type=int)
     b = sub.add_parser("apk", help="build a signed APK"); b.add_argument("name", nargs="?", help="app name (omit for the generic player)")
-    b.add_argument("--server", required=True); b.add_argument("--channel", default="prod", choices=CHANNELS); b.add_argument("--format", default="apk", choices=["apk", "aab"]); b.add_argument("--label"); b.add_argument("--out"); b.add_argument("--install", action="store_true")
+    b.add_argument("--dev", metavar="URL", help="live-reload build: the phone syncs code from this dev server (e.g. http://192.168.1.10:8787)")
+    b.add_argument("--server", metavar="URL", help='server that hosts signed script updates (used when app.json has "updates")')
+    b.add_argument("--format", default="apk", choices=["apk", "aab"]); b.add_argument("--label"); b.add_argument("--out"); b.add_argument("--install", action="store_true")
+    bu = sub.add_parser("bundle", help="write a signed script bundle (<app>.zip + .sig) to host anywhere for over-the-air updates"); bu.add_argument("name"); bu.add_argument("--out", default=".")
+    sub.add_parser("pubkey", help="print the public key apps use to verify script bundles")
+    ar = sub.add_parser("aar", help="build the engine as an .aar library for any Android Studio project"); ar.add_argument("--langs", default="lua,js,python,ruby,php"); ar.add_argument("--out")
     u = sub.add_parser("user", help="manage users"); u.add_argument("action", choices=["add", "del", "ls"]); u.add_argument("name", nargs="?")
     u.add_argument("--role", default="developer", choices=list(ROLES)); u.add_argument("--password")
     k = sub.add_parser("token", help="create an API token for CI"); k.add_argument("user"); k.add_argument("--label", default="ci")
@@ -1044,8 +1170,16 @@ def main():
     elif a.cmd == "deploy":
         deploy(a.name, a.n, os.environ.get("USER", "cli")); print("prod → r%d (running servers switch within a second)" % a.n)
     elif a.cmd == "apk":
-        out = build_apk(a.name, a.server, a.label, a.out, a.channel, a.format); print("built", out)
+        out = build_apk(a.name, a.dev, a.server, a.label, a.out, a.format); print("built", out)
         if a.install: print(sh(["adb", "install", "-r", out]).strip())
+    elif a.cmd == "bundle":
+        data = bundle_bytes(release_dir(a.name)); os.makedirs(a.out, exist_ok=True)
+        z = os.path.join(a.out, a.name + ".zip"); open(z, "wb").write(data); open(z + ".sig", "w").write(bundle_sign(data))
+        print("wrote %s (%d KB) and %s.sig" % (z, len(data) // 1024, z))
+    elif a.cmd == "pubkey":
+        print(bundle_pubkey())
+    elif a.cmd == "aar":
+        print("built", build_aar([x for x in a.langs.split(",") if x], a.out))
     elif a.cmd == "user":
         if a.action == "ls":
             for nm, role in db.q("SELECT name, role FROM users ORDER BY name"): print("%-20s %s" % (nm, role))

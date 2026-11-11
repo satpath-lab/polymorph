@@ -1,5 +1,17 @@
 require 'json'
 out = $stdout.dup; out.sync = true; $stdout = $stderr
+module Android
+  MEM = {}
+  def self.call(name, method = '', args = {})
+    case name.to_s
+    when 'device' then { 'platform' => 'web', 'model' => 'preview', 'sdk' => 0 }
+    when 'storage' then method == 'set' ? (MEM[args['key'] || args[:key]] = args['value'] || args[:value]; true) : method == 'get' ? MEM[args['key'] || args[:key]] : MEM
+    when 'clipboard' then method == 'set' ? (MEM['_clip'] = args['text'] || args[:text]; true) : MEM['_clip']
+    end
+  end
+  def self.method_missing(n, m = '', a = {}) call(n, m, a) end
+  def self.respond_to_missing?(*) true end
+end
 load_err = nil
 begin; load ARGV[0]; rescue Exception => e; load_err = e; end
 $stdin.each_line do |line|
