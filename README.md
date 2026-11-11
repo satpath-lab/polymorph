@@ -334,8 +334,9 @@ Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs
 ## Test status
 
 - **Verified on an Android 15 emulator:** every component, styling, tabs, dialogs, charts, canvas, web views, Java/Kotlin/C plugins, camera, GPS, notifications and reminders, device storage, offline cache and offline queue replay, background jobs, push to a closed app, Bluetooth permissions, infinite lists, live reload.
+- **Verified `.aab` builds:** a bundle built with bundletool 1.18.3 passes `bundletool validate`, is signed, and converts to an installable APK with the right package, version and SDK levels.
 - **Verified on the server:** all app tests (`volt.py test --all`), sandbox isolation, HTTPS enforcement for production builds, about 2,400 events/s under load.
-- **Not yet verified:** video playback on a real network, `.aab` builds (need bundletool), the Docker image, and the GitHub Actions pipeline. Reports and pull requests welcome.
+- **Not yet verified:** video playback on a real network, a Play Console upload, the Docker image, and the GitHub Actions pipeline. Reports and pull requests welcome.
 
 ## How it works
 
