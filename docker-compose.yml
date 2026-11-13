@@ -1,13 +1,13 @@
 services:
-  voltforge:
+  polymorph:
     build: .
     ports: ["8787:8787"]
     environment:
-      VOLT_ADMIN_PASSWORD: ${VOLT_ADMIN_PASSWORD:?set an admin password}
-      VOLT_DEVICE_KEY: ${VOLT_DEVICE_KEY:-}
-      VOLT_WORKERS: "8"
+      POLY_ADMIN_PASSWORD: ${POLY_ADMIN_PASSWORD:?set an admin password}
+      POLY_DEVICE_KEY: ${POLY_DEVICE_KEY:-}
+      POLY_WORKERS: "8"
     volumes:
-      - volt-data:/data
+      - poly-data:/data
       - ./apps:/app/apps
     deploy:
       resources:
@@ -17,4 +17,4 @@ services:
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
 volumes:
-  volt-data:
+  poly-data:

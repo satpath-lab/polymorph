@@ -1,17 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.host">
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:label="Host Example" android:icon="@drawable/ic_volt" android:usesCleartextTraffic="true" android:extractNativeLibs="true">
+    <application android:label="Host Example" android:icon="@drawable/ic_poly" android:usesCleartextTraffic="true" android:extractNativeLibs="true">
         <activity android:name="com.example.host.HostActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- merged from voltengine.aar (Gradle does this automatically) -->
-        <activity android:name="dev.volt.player.VoltActivity" android:exported="false" android:theme="@style/VoltTheme"
+        <!-- merged from polymorph-sdk.aar (Gradle does this automatically) -->
+        <activity android:name="dev.polymorph.app.PolyActivity" android:exported="false" android:theme="@style/PolyTheme"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:windowSoftInputMode="adjustResize" />
-        <provider android:name="dev.volt.player.VoltFiles" android:authorities="com.example.host.files" android:exported="false" android:grantUriPermissions="true" />
-        <receiver android:name="dev.volt.player.VoltAlarm" android:exported="false" />
-        <service android:name="dev.volt.player.VoltJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
+        <provider android:name="dev.polymorph.app.PolyFiles" android:authorities="com.example.host.files" android:exported="false" android:grantUriPermissions="true" />
+        <receiver android:name="dev.polymorph.app.PolyAlarm" android:exported="false" />
+        <service android:name="dev.polymorph.app.PolyJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
     </application>
 </manifest>

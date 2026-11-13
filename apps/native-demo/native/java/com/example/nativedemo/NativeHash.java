@@ -2,10 +2,10 @@ package com.example.nativedemo;
 
 import org.json.JSONObject;
 
-import dev.volt.player.VoltPlugin;
+import dev.polymorph.app.PolyPlugin;
 
 /** Bridges to C code in native/c/fasthash.c via JNI. */
-public class NativeHash implements VoltPlugin {
+public class NativeHash implements PolyPlugin {
     private static boolean loaded;
     private static String loadError;
 

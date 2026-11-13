@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoltForge</title>
+<title>Polymorph</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
 <style>
@@ -62,9 +62,9 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
 </style>
 </head>
 <body>
-<div id="banner">⚠ Open mode: no users exist, so anyone who can reach this server has admin rights. Create one with <code>volt.py user add &lt;name&gt; --role admin</code>.</div>
+<div id="banner">⚠ Open mode: no users exist, so anyone who can reach this server has admin rights. Create one with <code>poly.py user add &lt;name&gt; --role admin</code>.</div>
 <header>
-  <div class="logo">⚡ Volt<b>Forge</b></div>
+  <div class="logo">⚡ Poly<b>Forge</b></div>
   <span class="pill" id="status">connecting…</span>
   <div class="grow"></div>
   <span class="pill" id="ver">v–</span>
@@ -114,7 +114,7 @@ code.tok{background:#1d2130;padding:4px 8px;border-radius:6px;user-select:all;wo
     <div class="hint" id="hint"></div>
   </section>
 </main>
-<div id="login"><form id="loginform"><div class="logo">⚡ Volt<b>Forge</b></div><input id="luser" placeholder="username" autocomplete="username"><input id="lpass" type="password" placeholder="password" autocomplete="current-password"><button class="pri">Sign in</button><div id="lerr" class="bad"></div></form></div>
+<div id="login"><form id="loginform"><div class="logo">⚡ Poly<b>Forge</b></div><input id="luser" placeholder="username" autocomplete="username"><input id="lpass" type="password" placeholder="password" autocomplete="current-password"><button class="pri">Sign in</button><div id="lerr" class="bad"></div></form></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/lua/lua.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
@@ -130,14 +130,14 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MODES = { lua: 'lua', py: 'python', php: 'application/x-httpd-php', js: 'javascript', json: { name: 'javascript', json: true }, rb: 'ruby', md: null, txt: null, java: 'text/x-java', kt: 'text/x-kotlin', c: 'text/x-csrc', cpp: 'text/x-c++src', h: 'text/x-csrc' };
 const RANK = { viewer: 1, developer: 2, admin: 3 };
-let token = localStorage.getItem('volt_token') || '', me = null;
-let sid = localStorage.getItem('volt_sid') || (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
-localStorage.setItem('volt_sid', sid);
+let token = localStorage.getItem('poly_token') || '', me = null;
+let sid = localStorage.getItem('poly_sid') || (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+localStorage.setItem('poly_sid', sid);
 let cur = null, curFile = null, chan = 'dev', ver = -1, watchCtl = null, logAfter = 0, saveT = null, loading = false, meta = {};
 const inputs = {}, inputEls = {}, lastVal = {};
 
 async function api(path, opt = {}) {
-  opt.headers = Object.assign({ 'Content-Type': 'application/json' }, token ? { 'X-Volt-Token': token } : {}, opt.headers || {});
+  opt.headers = Object.assign({ 'Content-Type': 'application/json' }, token ? { 'X-Poly-Token': token } : {}, opt.headers || {});
   const r = await fetch(path, opt);
   if (r.status === 401) { showLogin(); throw new Error('login required'); }
   const j = await r.json().catch(() => ({}));
@@ -151,10 +151,10 @@ $('#loginform').onsubmit = async e => {
   e.preventDefault(); $('#lerr').textContent = '';
   try {
     const r = await fetch('/api/login', { method: 'POST', body: JSON.stringify({ user: $('#luser').value, password: $('#lpass').value }) }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error); return j; });
-    token = r.token; localStorage.setItem('volt_token', token); $('#login').style.display = 'none'; boot();
+    token = r.token; localStorage.setItem('poly_token', token); $('#login').style.display = 'none'; boot();
   } catch (err) { $('#lerr').textContent = err.message; }
 };
-$('#logout').onclick = async () => { try { await api('/api/logout', { method: 'POST' }); } catch (e) {} token = ''; localStorage.removeItem('volt_token'); location.reload(); };
+$('#logout').onclick = async () => { try { await api('/api/logout', { method: 'POST' }); } catch (e) {} token = ''; localStorage.removeItem('poly_token'); location.reload(); };
 
 let ed;
 if (window.CodeMirror) {
@@ -249,7 +249,7 @@ async function watch() {
   while (!ctl.signal.aborted) {
     try {
       if (ver < 0) { await new Promise(r => setTimeout(r, 100)); continue; }
-      const r = await fetch(`/api/watch/${name}?ch=${c}&v=${ver}`, { signal: ctl.signal, headers: token ? { 'X-Volt-Token': token } : {} }).then(r => r.json());
+      const r = await fetch(`/api/watch/${name}?ch=${c}&v=${ver}`, { signal: ctl.signal, headers: token ? { 'X-Poly-Token': token } : {} }).then(r => r.json());
       setStatus(true);
       if (r.v !== ver) { ver = r.v; await run(null); if (c === 'prod' || curTab === 'releases') refreshTab(); }
     } catch (e) { if (ctl.signal.aborted) return; setStatus(false, 'offline'); await new Promise(r => setTimeout(r, 1500)); }
@@ -345,7 +345,7 @@ function pickFile(id, accept) {
   inp.onchange = async () => {
     const f = inp.files[0]; if (!f) return result(id, { error: 'cancelled' });
     try {
-      const r = await fetch(`/api/upload/${cur}?ch=${chan}&name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f, headers: Object.assign({ 'Content-Type': f.type || 'application/octet-stream' }, token ? { 'X-Volt-Token': token } : {}) });
+      const r = await fetch(`/api/upload/${cur}?ch=${chan}&name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f, headers: Object.assign({ 'Content-Type': f.type || 'application/octet-stream' }, token ? { 'X-Poly-Token': token } : {}) });
       const j = await r.json(); result(id, r.ok ? j : { error: j.error || 'upload failed' });
     } catch (e) { result(id, { error: e.message }); }
   };

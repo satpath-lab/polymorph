@@ -17,10 +17,10 @@ import org.json.JSONObject;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import dev.volt.player.VoltPlugin;
+import dev.polymorph.app.PolyPlugin;
 
 /** Scans for Bluetooth LE devices for args.seconds (default 4) and returns [{name, address, rssi}]. */
-public class Bluetooth implements VoltPlugin {
+public class Bluetooth implements PolyPlugin {
     @Override public void call(final Host host, String method, final JSONObject args, final Result result) {
         String[] perms = Build.VERSION.SDK_INT >= 31
                 ? new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT}

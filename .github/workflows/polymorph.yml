@@ -1,0 +1,36 @@
+name: Polymorph CI/CD
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install runtimes
+        run: sudo apt-get update && sudo apt-get install -y lua5.4 php-cli ruby && sudo ln -sf /usr/bin/lua5.4 /usr/local/bin/lua
+      - name: Run app tests
+        run: python3 poly.py test --all
+
+  release:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      POLY_URL: ${{ secrets.POLY_URL }}
+      POLY_API_TOKEN: ${{ secrets.POLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - name: Sync changed apps and cut releases
+        run: |
+          set -euo pipefail
+          for app in $(git diff --name-only HEAD~1 HEAD -- apps | cut -d/ -f2 | sort -u); do
+            [ -d "apps/$app" ] || continue
+            echo "→ $app"
+            tar czf - -C "apps/$app" . | curl -fsS "$POLY_URL/api/sync/$app" -H "Authorization: Bearer $POLY_API_TOKEN" --data-binary @-
+            curl -fsS "$POLY_URL/api/release/$app" -H "Authorization: Bearer $POLY_API_TOKEN" \
+              -d "{\"note\": \"${GITHUB_SHA::7} $(git log -1 --pretty=%s | tr -d '"')\"}"
+          done

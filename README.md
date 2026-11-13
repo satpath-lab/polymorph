@@ -1,149 +1,248 @@
-# ⚡ VoltForge
+# 🦎 Polymorph
 
-**Build real native Android apps in Lua, Python, PHP, JavaScript or Ruby. The scripts run on the phone itself.**
+**Write native mobile apps in Python, JavaScript, Lua, Ruby or PHP, and fix them live without a store update.**
 
-You write three small functions in any of those languages. VoltForge puts a real interpreter for that language inside your APK. Your script runs on the device and its output becomes **real native Android views** (not a WebView). No server is needed: the app works offline, from the first launch.
+Polymorph puts a real interpreter for your language *inside* the app. Your script runs on the phone and draws real native screens: Android views on Android, SwiftUI on iPhone and Mac. Nothing is drawn by a server, and apps work offline.
 
-- 🧠 **5 languages on the device**: Lua 5.4, JavaScript (QuickJS), Python 3.14 (official CPython), Ruby (mruby), PHP 8.4
-- 📱 **Native UI**: real `LinearLayout`, `Button`, `EditText`, lists, charts, dialogs, tabs…
-- 🤖 **Direct Android access from scripts**: `android.device()`, `android.storage(...)`, `android.http(...)`, `android.clipboard(...)`, plus any plugin you write in Java, Kotlin or C
-- 🔌 **Your choice of where code lives**: bundled in the APK (fully offline), synced live from your computer while developing, or downloaded as **signed over-the-air updates** that you can push at any time
-- 🔥 **Live reload while developing**: save a file and the phone reloads in about a second, keeping its state
-- 🧩 **SDK for existing apps**: add the `.aar`, expose your Java/Kotlin objects, and write any part of the app (logic or whole screens) in a script that you can replace at runtime
-- 🔁 **Two-way native bridge**: scripts call your native code, pass callbacks that native code calls later, and send events. Native code calls script functions
-- 📦 **Signed APKs and AABs** with no Gradle and no Android Studio, built straight from the SDK tools
-- 🏢 **Built for teams**: web IDE, tests, test-gated releases, roles, audit log, CI/CD
+You can use it in two ways:
 
-## Why VoltForge
+| | what it means | for whom |
+|---|---|---|
+| 📱 **Build a whole app** | Write the app in a scripting language. Polymorph turns it into an Android `.apk` / `.aab`, an iPhone app or a Mac app. | Teams who know Python, JS, PHP, Ruby or Lua but not Kotlin or Swift |
+| 🧩 **Add it to an existing app** | Keep your Kotlin, Java or Swift app, and write *some parts* in scripts: price rules, checks, feature switches, or whole screens. | Companies with an existing app |
 
-- **Logic stays in the language your team already uses.** A Python data team, a PHP web shop, a Node team, or Lua and Ruby developers can ship a native app without learning Android.
-- **It runs natively and offline.** The interpreter is compiled into the APK for each CPU type. Events are handled on the phone in microseconds to a few milliseconds.
-- **You still control updates.** Turn on signed script updates and fix bugs without a store release. Updates are verified with your key before they run.
-- **Nothing is out of reach.** Anything a script can't do directly, you write in Java, Kotlin or C and call from the script.
+Either way you get **🔥 hot fixes**: change the script, publish it, and every installed app picks up the new code the next time it opens. No new APK, no App Store or Play Store review. Each update is signed, and the app refuses code that isn't signed with your key.
 
-### Where it helps
+The name: *polymorph* means "many forms". One app runs many languages and can change its form whenever you need it to.
 
-| use case | why it fits |
-|---|---|
-| Internal company tools: field service, inventory, approvals, check-ins | camera, GPS, storage, works offline; push fixes to every employee with a signed update |
-| Prototypes and MVPs | one file per app, live browser preview, signed APK in one click |
-| Apps whose rules change often (pricing, forms, workflows) | ship new script logic over the air, no store review |
-| Adding scripting to an existing Android app | add the `.aar`, expose your native classes, and ship rule or screen changes as signed script updates |
-| Teaching app development | five beginner-friendly languages with instant feedback |
+---
+
+## Contents
+
+1. [Platforms and languages](#platforms-and-languages)
+2. [Quick start](#quick-start)
+3. [Build a whole app](#build-a-whole-app)
+4. [Hot fixes](#hot-fixes)
+5. [Add Polymorph to an existing app](#add-polymorph-to-an-existing-app)
+6. [Talking to native code](#talking-to-native-code)
+7. [Writing an app: screens and features](#writing-an-app)
+8. [App settings](#app-settings) · [Security](#security) · [Publishing to Google Play](#publishing-to-google-play) · [Team server](#team-server-optional)
+9. [Limitations](#limitations)
+10. [What has been tested](#what-has-been-tested)
+11. [Project layout](#project-layout)
+
+---
+
+## Platforms and languages
+
+| | Android | iPhone / iPad | Mac |
+|---|:---:|:---:|:---:|
+| Lua 5.4 | ✅ | ✅ | ✅ |
+| JavaScript (QuickJS) | ✅ | ✅ | ✅ |
+| Python 3.14 | ✅ | ✅ ¹ | ✅ |
+| Ruby (mruby 3.4) | ✅ | ✅ | ✅ |
+| PHP 8.4 | ✅ | ✅ | ✅ |
+| Whole apps | ✅ | ✅ | ✅ |
+| Add to an existing app (SDK) | ✅ `.aar` | ✅ Xcode folder | ✅ Xcode folder |
+| Hot fixes | ✅ | ✅ ² | ✅ |
+
+¹ Python on iPhone uses BeeWare's Python build, downloaded separately (see [Limitations](#limitations)).
+² Apple's rules limit what downloaded code may change (see [Limitations](#limitations)).
+
+---
 
 ## Quick start
 
+You need Python 3 on your computer. For Android builds you need the Android SDK and a JDK; for Apple builds you need a Mac with Xcode.
+
 ```bash
-python3 volt.py serve          # web IDE with a live phone preview at http://localhost:8787
-python3 volt.py apk todo-lua   # build an offline APK with the script inside
+python3 poly.py serve            # web editor with a live phone preview → http://localhost:8787
+python3 poly.py apk todo-lua     # Android app       → data/build/todo-lua-prod.apk
+python3 poly.py ios todo-lua     # iPhone app        → data/build/todo-lua-ios.app
+python3 poly.py mac todo-lua     # Mac app           → data/build/todo-lua-macos.app
 ```
 
-### Three ways to ship code
+`apps/` contains ready-made examples in every language: `todo-lua`, `calc-js`, `counter-py`, `hello-rb`, `tips-php`, and more.
 
-| build | command | where the script comes from |
-|---|---|---|
-| **Bundled** (default) | `volt.py apk myapp` | inside the APK. Works fully offline. A new version needs a new APK |
-| **Live dev** | `volt.py apk myapp --dev http://192.168.1.10:8787` | synced from your computer. Saving a file reloads the phone. Use `http://10.0.2.2:8787` for the emulator |
-| **Over-the-air** | add `"updates"` to `app.json`, then `volt.py apk myapp --server https://your-host` | bundled code first, then signed updates downloaded from your server or any static host (S3, GitHub Pages, a CDN) |
+---
 
-Every option runs the script **on the phone**. The dev and over-the-air options only download files; no screen ever comes from a server.
+## Build a whole app
 
-Over-the-air updates in `app.json`:
+**1. Create an app** in the language you like:
+
+```bash
+python3 poly.py new shop python      # creates apps/shop/main.py
+```
+
+**2. Write three functions.** `init` gives the starting data, `update` reacts to taps, and `view` describes the screen:
+
+```python
+def init():
+    return {"count": 0}
+
+def update(state, event):
+    if event["id"] == "add":
+        state["count"] += 1
+    return state
+
+def view(state):
+    return {"title": "Counter", "body": {"type": "column", "padding": 24, "gap": 12, "children": [
+        {"type": "text", "text": str(state["count"]), "size": 48, "bold": True},
+        {"type": "button", "id": "add", "text": "Add one"},
+    ]}}
+```
+
+**3. Try it** in the browser preview (`poly.py serve`), or on a real phone while you edit:
+
+```bash
+python3 poly.py apk shop --dev http://192.168.1.10:8787     # Android: the phone reloads every time you save
+python3 poly.py ios shop --simulator --dev http://localhost:8787
+```
+
+**4. Build the real app:**
+
+```bash
+python3 poly.py apk shop                      # Android .apk (add --format aab for Google Play)
+python3 poly.py ios shop --sign "Apple Development: you@example.com (TEAMID)" --profile shop.mobileprovision
+python3 poly.py mac shop --open
+```
+
+Apps can have many files and folders (`lib/`, `assets/`). See [Writing an app](#writing-an-app) for every screen element and phone feature.
+
+---
+
+## Hot fixes
+
+Ship a fix to every installed app, with no store update.
+
+**1. Turn it on** in `apps/<app>/app.json`:
 
 ```json
-{ "updates": { "url": "https://cdn.example.com/myapp.zip", "check": "launch" } }
+{ "updates": { "url": "https://your-server.com/b/shop.zip", "check": "launch" } }
 ```
 
-- `check` is `"launch"` (every app start) or a number of minutes.
-- Publish a version with `python3 volt.py bundle myapp --out public/`. It writes `myapp.zip` and `myapp.zip.sig`.
-- Or let `volt.py serve` host them at `/b/<app>.zip`. It always serves the deployed release.
-- Bundles are signed with an ECDSA P-256 key kept in `data/bundle-signing.pem`. Its public key is built into the APK, and a bundle with a bad signature is rejected (the app keeps running its current code). Back this key up: without it you can't ship updates to installed apps.
+`check` is `"launch"` (every time the app opens) or a number of minutes.
 
-## Use it as an SDK in any Android app
+**2. Build the app once** (`poly.py apk shop` / `poly.py ios shop`) and release it as usual. Your public key is built into it automatically.
 
-You don't have to build the whole app with VoltForge. Add the engine to an existing Kotlin or Java app and write only some parts in a script: pricing rules, validation, feature flags, whole screens. Your app can replace those scripts at any time by asking for a new one.
+**3. Whenever you need a fix,** change the script and publish it in one of two ways:
+- `python3 poly.py bundle shop --out public/` writes `shop.zip` and `shop.zip.sig`. Upload both anywhere: your website, S3, GitHub Pages, a CDN.
+- Or run `poly.py serve` on your server; it publishes the deployed release at `/b/shop.zip` for you.
+
+**What the app does:** it downloads the new code, checks the signature, and switches to it. If the signature is wrong, or the phone is offline, it keeps running the code it already has.
+
+> 🔑 Back up `data/bundle-signing.pem`. It's your signing key: without it you can't send fixes to apps that are already installed.
+
+---
+
+## Add Polymorph to an existing app
+
+### Android (Kotlin or Java)
+
+**Step 1. Make the library** with only the languages you need:
 
 ```bash
-python3 volt.py aar --langs python,js,lua      # → data/build/voltengine.aar (pick only the languages you need)
+python3 poly.py aar --langs python,js        # → data/build/polymorph-sdk.aar
 ```
 
-In Android Studio, copy the `.aar` to `app/libs/` and add `implementation(files("libs/voltengine.aar"))`. Its manifest entries (the script screen activity and helpers) merge automatically.
+**Step 2. Add it to your project.** Copy the file to `app/libs/` and add one line to `app/build.gradle.kts`:
 
-**1. Expose native code to scripts** (Java, Kotlin, or C through your own JNI wrapper):
+```kotlin
+dependencies { implementation(files("libs/polymorph-sdk.aar")) }
+```
+
+**Step 3. Put your scripts** in `app/src/main/assets/scripts/` (for example `scripts/pricing/main.py`).
+
+**Step 4. Share your own code with the scripts, and run them:**
 
 ```kotlin
 class Tax { fun rate(country: String) = if (country == "DE") 0.19 else 0.0 }
-class Clock { fun every(ms: Int, times: Int, cb: VoltCallback) { /* later */ cb.call(1) } }
 
-Volt.expose("Tax", Tax())                                   // available to every engine
-Volt.function("hostVersion") { args -> "2.4.1" }            // a single function
+Poly.expose("Tax", Tax())                              // scripts can now call native.Tax.rate("DE")
+
+val pricing = Poly.engine(this)
+    .source(ScriptSource.asset("scripts/pricing"))
+    .open()
+
+val total = pricing.invoke("price", 100, "DE")        // run a script function and get its answer
 ```
 
-Public methods are matched by name and argument count, and arguments are converted for you: numbers, strings, booleans, `Map`, `List`, arrays, `JSONObject`, `JSONArray`. A script function passed as an argument arrives as a `VoltCallback`. Return values go back to the script as JSON-compatible data.
-
-**2. Open an engine and call script functions:**
+**Step 5 (optional). Hot-fix the script** whenever you want:
 
 ```kotlin
-val engine = Volt.engine(context)
-    .source(ScriptSource.asset("scripts/pricing"))           // or .dir(file), .code("main.py", text), .url(zipUrl, publicKey)
-    .expose("Clock", Clock())                                // only for this engine
-    .on("tick") { name, data -> Log.i("app", "script says $data") }
-    .open()                                                  // or .openAsync { engine, error -> }
-
-val total = engine.invoke("price", 100, "DE")               // blocking; safe from any thread
-engine.invokeAsync("price", { value, error -> show(value) }, 100, "DE")   // result delivered on the main thread
+pricing.load(ScriptSource.url("https://your-server.com/b/pricing.zip", PUBLIC_KEY))
 ```
 
-**3. In the script** (the same in every language):
-
-```python
-def price(amount, country):
-    return amount * (1 + android.Tax.rate(country))          # call Java/Kotlin directly
-
-def start_ticks():
-    android.Clock.every(300, 3, lambda n: android.emit("tick", {"n": n}))   # pass a callback, send events
-```
-
-| language | call native code | pass a callback | send an event |
-|---|---|---|---|
-| Python | `android.Tax.rate("DE")` | any function or lambda | `android.emit("tick", data)` |
-| JavaScript | `android.Tax.rate('DE')` | any function | `android.emit('tick', data)` |
-| Lua | `android.Tax.rate("DE")` | any function | `android.emit("tick", data)` |
-| Ruby | `Android.Tax.rate("DE")` | a lambda / proc | `Android.emit("tick", data)` |
-| PHP | `Android::Tax()->rate('DE')` | a closure | `Android::emit('tick', $data)` |
-
-Native code calls a callback back with `cb.call(args…)` (queued on the script's thread) or `cb.callSync(args…)` (waits for the return value). Call `cb.release()` when it won't be called again. Each engine runs on its own thread, so scripts never block your UI thread.
-
-**4. Replace scripts at any time:**
+**Step 6 (optional). Show a whole screen written in a script:**
 
 ```kotlin
-engine.load(ScriptSource.url("https://cdn.example.com/pricing.zip", PUBLIC_KEY))   // download, verify signature, swap
-engine.load(ScriptSource.code("main.js", jsFromYourBackend))                       // or any code you have
-engine.update()                                                                    // re-check the current URL (uses ETag)
+Poly.openScreen(this, ScriptSource.asset("scripts/checkout"), 1)
+// the script closes the screen with  _finish = {...}  and you get the data in onActivityResult
 ```
 
-A new script can even be in a different language from the old one. A bundle with a bad signature is rejected, and the engine keeps the script it had. Publish bundles with `volt.py bundle <app>`, and print the public key with `volt.py pubkey`.
+A complete working example is in [examples/android-host](examples/android-host).
 
-**5. Show a screen written in a script** and get its result back:
+### iPhone, iPad and Mac (Swift)
 
-```kotlin
-Volt.openScreen(activity, ScriptSource.asset("scripts/checkout"), REQUEST_CHECKOUT)
-// the script ends the screen with _finish = {...}; the data arrives in onActivityResult as intent.getStringExtra("volt.result")
+**Step 1. Make the SDK folder** with only the languages you need:
+
+```bash
+python3 poly.py apple-sdk --langs js,lua       # → data/build/PolymorphSDK
 ```
 
-Script screens use the full component set, styling and device features described below, and can call your exposed objects too.
+**Step 2. Drag it into Xcode** and set three build settings. The exact values are in `PolymorphSDK/README.md`.
 
-A working example is in [examples/android-host](examples/android-host). It's a plain Java app that uses the `.aar` to do all five of the steps above. Build it with `python3 examples/android-host/build.py`; that script stands in for Gradle so the repo needs no Android Studio.
+**Step 3. Use it:**
+
+```swift
+Poly.expose("Tax") { method, args in 0.19 }                         // scripts can call native.Tax.rate()
+let pricing = try PolyEngine(dir: Bundle.main.resourceURL!.appendingPathComponent("scripts/pricing"))
+let total = try pricing.invoke("price", 100, "DE")
+
+PolyScreen(source: .bundled("scripts/checkout"))                    // a SwiftUI view drawn by a script
+```
+
+---
+
+## Talking to native code
+
+The same calls work in every language. `native` and `android` are two names for the same object.
+
+| you want to… | Python | JavaScript | Lua | Ruby | PHP |
+|---|---|---|---|---|---|
+| call your Kotlin/Java/Swift code | `native.Tax.rate("DE")` | `native.Tax.rate('DE')` | `native.Tax.rate("DE")` | `Native.Tax.rate("DE")` | `Native::Tax()->rate('DE')` |
+| give native code a function to call later | `native.Timer.after(5, done)` | `native.Timer.after(5, done)` | `native.Timer.after(5, done)` | `Native.Timer.after(5, ->(x){})` | `Native::Timer()->after(5, fn($x) => 1)` |
+| send a message to the app | `native.emit("paid", data)` | `native.emit('paid', data)` | `native.emit("paid", data)` | `Native.emit("paid", data)` | `Native::emit('paid', $data)` |
+
+**Built in on every platform:**
+
+| call | what it does |
+|---|---|
+| `native.device()` | phone model, system version, language |
+| `native.storage("set", {key, value})` / `("get", {key})` | save small data on the phone (encrypted on Android) |
+| `native.http("", {url, method, headers, body, json: true})` | web requests: returns `{status, ok, body, json}` |
+| `native.files("read" / "write" / "list" / "delete", {path, text})` | files in the app's private folder |
+| `native.clipboard("get")` / `("set", {text})` | copy and paste |
+| `native.toast("", {text})`, `native.vibrate()`, `native.open("", {url})` | small message, vibration, open a link |
+
+**In your Kotlin or Java code:**
+- `Poly.expose(name, object)` shares all of the object's public methods with the scripts.
+- A script function you receive arrives as a `PolyCallback`. Run it later with `callback.call(value)`.
+- `engine.on("paid") { name, data -> … }` receives `emit` messages from the script.
+
+**In Swift**, the same three things are `Poly.expose(name) { method, args in … }`, `PolyCallback.call(…)` and `engine.on("paid") { data in … }`.
+
+---
 
 ## Writing an app
 
-Every app is `apps/<name>/main.<lua|py|php|js|rb>` and uses the same Elm-style contract:
+Every app is `apps/<name>/main.<lua|py|php|js|rb>` and has the same three functions:
 
 | function | purpose |
 |---|---|
-| `init()` | returns the starting state for a new user session |
+| `init()` | returns the starting data |
 | `update(state, event)` | returns the new state after a tap, change or submit |
-| `view(state)` | returns the screen as plain data (tables, dicts, arrays or objects) |
+| `view(state)` | returns the screen as plain data (lists and dictionaries) |
 
 ```lua
 function init() return {count = 0} end
@@ -160,7 +259,7 @@ end
 
 **Event:** also includes `store` (this device's saved data) and `device` (`platform`, `sdk`, `model`, `brand`, `lang`, `dark`, `width`, `height`).
 
-### Native device features
+### Phone features
 
 Set any of these keys on the state you return. The phone performs the action once. Anything that produces a value sends back an event `{type: "result", id, value}`, where `value` is either the data or `{error: "cancelled" | "denied" | ...}`. Runtime permissions are requested automatically.
 
@@ -191,69 +290,7 @@ The web preview fakes all of these: a file chooser stands in for the camera, it 
 
 `_background = {every: 15}` schedules a periodic job (Android's minimum is 15 minutes) that runs even when the app is closed or after a reboot. Each run calls your script on the phone with `{type: "background"}`, and any `_notify` / `_store` it returns is applied. `_background = {on: false}` cancels it. For instant push messages, add the Firebase SDK as a plugin jar.
 
-### Direct Android calls
-
-Scripts can call Android synchronously and get the result back right away. This is in addition to the `_effect` keys above:
-
-| call | result |
-|---|---|
-| `android.device()` | `{platform, sdk, model, brand, lang, dark, width, height}` |
-| `android.storage("set", {key, value})`, `("get", {key})`, `("remove", {key})`, `("all")` | device storage (encrypted when `encryptStorage` is on) |
-| `android.http("", {url, method, headers, body, json: true, timeout})` | `{status, ok, body, headers, json}`. Certificate pins apply |
-| `android.files("read" \| "write" \| "list" \| "delete" \| "exists", {path, text, append})` | files in the app's private storage |
-| `android.clipboard("get")`, `android.clipboard("set", {text})` | clipboard text |
-| `android.toast("", {text})`, `android.vibrate("", {ms})`, `android.open("", {url})` | – |
-| `android.app("info")`, `android.app("update")` | app info / check for a signed script update now and reload if one arrives |
-| `android.<YourPlugin>(method, args)` | any Java, Kotlin or C plugin in `native/` (see below) |
-
-The syntax is the same idea in every language:
-- **Lua and JavaScript:** `android.storage("get", {key = "x"})`, `android.storage('get', {key: 'x'})`
-- **Python:** `android.storage("get", {"key": "x"})`
-- **Ruby:** `Android.storage("get", {"key" => "x"})`
-- **PHP:** `Android::storage('get', ['key' => 'x'])`
-
-In the web preview, `device`, `storage` and `clipboard` are simulated and other calls return `null`.
-
-## Native plugins (Java, Kotlin, C/C++, any .jar)
-
-Anything the scripts can't do, you write natively and call from any language:
-
-```
-apps/<app>/native/
-  java/com/acme/Torch.java     class Torch implements dev.volt.player.VoltPlugin
-  kotlin/Battery.kt            class Battery : VoltPlugin
-  c/fasthash.c                 JNI → libfasthash.so (one .c = one library; a folder = one library)
-  libs/zxing-core.jar          third-party jars (e.g. QR scanning, crypto, SDKs)
-  permissions.txt              extra manifest permissions, one per line
-```
-
-```java
-public class Torch implements VoltPlugin {
-    public void call(Host host, String method, JSONObject args, Result result) throws Exception {
-        CameraManager cm = (CameraManager) host.activity().getSystemService(Context.CAMERA_SERVICE);
-        cm.setTorchMode(cm.getCameraIdList()[0], method.equals("on"));
-        result.ok(new JSONObject().put("on", method.equals("on")));
-    }
-}
-```
-
-```lua
-s._native = {plugin = "Torch", method = "on", id = "torch", args = {}}   -- result arrives as {type="result", id="torch", value={on=true}}
-```
-
-`Host` gives a plugin the `activity()`, `requestPermissions(perms, cb)`, `startForResult(intent, cb)`, `emit(id, value)` for streams (sent as `{type: "native", id, value}` events, e.g. sensor readings), and `runOnUi` / `runInBackground`. Plugins are found automatically by scanning for classes that implement `VoltPlugin`.
-
-**Build:** Java uses `javac`. Kotlin uses `kotlinc`, and the Kotlin standard library is bundled automatically. Each C/C++ file is compiled with the Android NDK for `VOLT_ABIS` (default `arm64-v8a,x86_64`); without the NDK, C files are skipped with a warning. Everything is turned into Android bytecode with `d8`. Builds are cached by content hash.
-
-Native code ships in the APK, so changing it needs a new APK build. Scripts stay live-editable as before. The `apps/native-demo` app shows each kind:
-- flashlight (Java)
-- battery (Kotlin)
-- FNV-1a hashing (C via JNI)
-- live accelerometer stream (Java + `emit`)
-- Bluetooth LE scan (Java + runtime permissions)
-- background job and a 1,000+ row infinite list
-
-### Components
+### Screen building blocks
 
 | type | props |
 |---|---|
@@ -293,7 +330,50 @@ Native code ships in the APK, so changing it needs a new APK build. Scripts stay
 
 **Date and time pickers:** `_pickDate = {id, value: "2026-12-24"}` and `_pickTime = {id, value: "09:30"}` open native pickers and return `"YYYY-MM-DD"` / `"HH:MM"`.
 
-## App configuration (`apps/<app>/app.json`)
+### Your own Java, Kotlin or C code inside a Polymorph app
+
+Anything the scripts can't do, you write natively and call from any language:
+
+```
+apps/<app>/native/
+  java/com/acme/Torch.java     class Torch implements dev.polymorph.app.PolyPlugin
+  kotlin/Battery.kt            class Battery : PolyPlugin
+  c/fasthash.c                 JNI → libfasthash.so (one .c = one library; a folder = one library)
+  libs/zxing-core.jar          third-party jars (e.g. QR scanning, crypto, SDKs)
+  permissions.txt              extra manifest permissions, one per line
+```
+
+```java
+public class Torch implements PolyPlugin {
+    public void call(Host host, String method, JSONObject args, Result result) throws Exception {
+        CameraManager cm = (CameraManager) host.activity().getSystemService(Context.CAMERA_SERVICE);
+        cm.setTorchMode(cm.getCameraIdList()[0], method.equals("on"));
+        result.ok(new JSONObject().put("on", method.equals("on")));
+    }
+}
+```
+
+```lua
+s._native = {plugin = "Torch", method = "on", id = "torch", args = {}}   -- result arrives as {type="result", id="torch", value={on=true}}
+```
+
+`Host` gives a plugin the `activity()`, `requestPermissions(perms, cb)`, `startForResult(intent, cb)`, `emit(id, value)` for streams (sent as `{type: "native", id, value}` events, e.g. sensor readings), and `runOnUi` / `runInBackground`. Plugins are found automatically by scanning for classes that implement `PolyPlugin`.
+
+**Build:** Java uses `javac`. Kotlin uses `kotlinc`, and the Kotlin standard library is bundled automatically. Each C/C++ file is compiled with the Android NDK for `POLY_ABIS` (default `arm64-v8a,x86_64`); without the NDK, C files are skipped with a warning. Everything is turned into Android bytecode with `d8`. Builds are cached by content hash.
+
+Native code ships in the APK, so changing it needs a new APK build. Scripts stay live-editable as before. The `apps/native-demo` app shows each kind:
+- flashlight (Java)
+- battery (Kotlin)
+- FNV-1a hashing (C via JNI)
+- live accelerometer stream (Java + `emit`)
+- Bluetooth LE scan (Java + runtime permissions)
+- background job and a 1,000+ row infinite list
+
+---
+
+## App settings
+
+Settings live in `apps/<app>/app.json`.
 
 Every security and behavior feature can be switched on or off per app. Any key you leave out uses the default shown here.
 
@@ -326,19 +406,19 @@ Every security and behavior feature can be switched on or off per app. Any key y
 ## Security
 
 - **Code integrity:** over-the-air script bundles must carry a valid ECDSA P-256 signature from your key, or the phone refuses them and keeps its current code.
-- **In transit:** HTTPS (required for script updates by default) plus optional **certificate pinning**. Run `python3 volt.py pin https://your-server` and put the printed pins in `app.json`. A server presenting a certificate that is not pinned is rejected before any data is sent. Pin your CA's intermediate certificate so routine certificate renewals keep working.
+- **In transit:** HTTPS (required for script updates by default) plus optional **certificate pinning**. Run `python3 poly.py pin https://your-server` and put the printed pins in `app.json`. A server presenting a certificate that is not pinned is rejected before any data is sent. Pin your CA's intermediate certificate so routine certificate renewals keep working.
 - **On the phone:** app state, cached screens and device storage are encrypted with an Android Keystore AES-256-GCM key that cannot be exported. Screenshots can be blocked. Plain HTTP is disabled in HTTPS builds.
-- **On the dev/update server:** PBKDF2 password hashes, tokens stored only as hashes, roles, an audit log, login lockout after 10 failures per IP within 10 minutes, `X-Frame-Options` / `nosniff` / `Referrer-Policy` headers, HSTS (`VOLT_HSTS=1` or set automatically behind an HTTPS proxy), and an optional device key.
-- **Preview sandbox:** with `VOLT_SANDBOX=1`, scripts running in the web preview run under `sandbox-exec` (macOS) or `bubblewrap` (Linux). A script can read its own app folder but not the database, other apps or `~/.ssh`, and cannot write files. `VOLT_SANDBOX_NET=0` also blocks network access.
+- **On the dev/update server:** PBKDF2 password hashes, tokens stored only as hashes, roles, an audit log, login lockout after 10 failures per IP within 10 minutes, `X-Frame-Options` / `nosniff` / `Referrer-Policy` headers, HSTS (`POLY_HSTS=1` or set automatically behind an HTTPS proxy), and an optional device key.
+- **Preview sandbox:** with `POLY_SANDBOX=1`, scripts running in the web preview run under `sandbox-exec` (macOS) or `bubblewrap` (Linux). A script can read its own app folder but not the database, other apps or `~/.ssh`, and cannot write files. `POLY_SANDBOX_NET=0` also blocks network access.
 
-## Play Store
+## Publishing to Google Play
 
 - `app.json` sets the package ID, version, icon, orientation and SDK levels. `targetSdk` defaults to 35, which Google Play requires.
-- Build an **Android App Bundle** with `python3 volt.py apk myapp --format aab`, or pick `.aab` in the IDE.
-- Bundles need Google's `bundletool`. Download `bundletool-all-<version>.jar` from github.com/google/bundletool/releases and set `VOLT_BUNDLETOOL` to its path.
-- Use your own signing key with `VOLT_KEYSTORE` / `VOLT_KEYSTORE_PASS`.
+- Build an **Android App Bundle** with `python3 poly.py apk myapp --format aab`, or pick `.aab` in the IDE.
+- Bundles need Google's `bundletool`. Download `bundletool-all-<version>.jar` from github.com/google/bundletool/releases and set `POLY_BUNDLETOOL` to its path.
+- Use your own signing key with `POLY_KEYSTORE` / `POLY_KEYSTORE_PASS`.
 
-## Team workflow
+## Team server (optional)
 
 ```
  edit (IDE or your own editor + git)  ──▶  dev APKs and the preview reload on every save
@@ -347,7 +427,7 @@ Every security and behavior feature can be switched on or off per app. Any key y
                 │ yes
         release rN (immutable snapshot)  ──admin deploys──▶  /b/<app>.zip (signed): apps with "updates" pick it up
                 │                                    ◀── one-click rollback to any rN
-                └──▶  volt.py apk myapp: release builds bundle the deployed release
+                └──▶  poly.py apk myapp: release builds bundle the deployed release
 ```
 
 - **Dev and release builds.** Dev APKs sync the working tree and reload on every save. Release APKs bundle the deployed release (or the working tree if nothing is deployed).
@@ -373,9 +453,9 @@ Put JSON cases in `apps/<app>/tests/*.json`. Each step sends an event, and `expe
 ]}]
 ```
 
-Run them with `python3 volt.py test --all`, which exits with code 1 on failure (suitable for CI), or with the **Tests** tab in the IDE.
+Run them with `python3 poly.py test --all`, which exits with code 1 on failure (suitable for CI), or with the **Tests** tab in the IDE.
 
-### Access control
+### Users and roles
 
 | role | can |
 |---|---|
@@ -384,20 +464,20 @@ Run them with `python3 volt.py test --all`, which exits with code 1 on failure (
 | admin | + deploy/rollback, force releases, delete apps, manage users |
 
 ```bash
-python3 volt.py user add alice --role admin      # prompts for a password (PBKDF2-hashed)
-python3 volt.py token alice --label github-ci     # long-lived API token for CI
+python3 poly.py user add alice --role admin      # prompts for a password (PBKDF2-hashed)
+python3 poly.py token alice --label github-ci     # long-lived API token for CI
 ```
 
 With no users, the server runs in **open mode** (everyone is admin) and shows a warning banner. That is meant for local development only. Session and API tokens are stored only as SHA-256 hashes. Every write is recorded in the **audit log** (IDE tab or `GET /api/audit`).
 
-### CI/CD
+### Automatic builds (CI)
 
-[.github/workflows/voltforge.yml](.github/workflows/voltforge.yml) runs every app's tests on each push and pull request. On `main`, it uploads each changed app (`POST /api/sync/<app>` with a tar.gz) and creates a release. An admin then deploys it from the IDE. Add `"deploy": true` to the release call if you want continuous deployment. Set the repository secrets `VOLT_URL` and `VOLT_API_TOKEN`.
+[.github/workflows/polymorph.yml](.github/workflows/polymorph.yml) runs every app's tests on each push and pull request. On `main`, it uploads each changed app (`POST /api/sync/<app>` with a tar.gz) and creates a release. An admin then deploys it from the IDE. Add `"deploy": true` to the release call if you want continuous deployment. Set the repository secrets `POLY_URL` and `POLY_API_TOKEN`.
 
-## Running in production
+### Running the team server
 
 ```bash
-VOLT_ADMIN_PASSWORD='change-me-now' docker compose up -d
+POLY_ADMIN_PASSWORD='change-me-now' docker compose up -d
 ```
 
 The server is optional: release apps run without it. Host it when your team wants the shared IDE, releases and over-the-air updates. Put it behind HTTPS (Caddy, nginx, or a cloud load balancer). The container runs as a non-root user on a read-only filesystem with CPU and memory limits. Data (SQLite database, releases, signing key) lives in the `/data` volume, so back that up.
@@ -405,90 +485,100 @@ The server is optional: release apps run without it. Host it when your team want
 | env var | default | |
 |---|---|---|
 | `PORT` | 8787 | listen port |
-| `VOLT_DATA` | `./data` | SQLite DB, releases, keystore, build cache |
-| `VOLT_ADMIN_PASSWORD` / `VOLT_ADMIN_USER` | – | creates the first admin on startup if there are no users |
-| `VOLT_WORKERS` | 4 | warm interpreter processes per app for the web preview |
-| `VOLT_TIMEOUT` | 10 | seconds per script call before the worker is killed |
-| `VOLT_DEVICE_KEY` | – | shared key baked into APKs. Without it, dev sync and update downloads are rejected |
-| `VOLT_SESSION_DAYS` | 14 | IDE login lifetime |
-| `VOLT_MAX_UPLOAD_MB` | 15 | maximum size of a camera or file upload |
-| `VOLT_UPLOAD_DAYS` | 30 | delete uploads older than this (0 = never) |
-| `VOLT_SANDBOX` / `VOLT_SANDBOX_NET` | off / 1 | run scripts in an OS sandbox / allow network inside it |
-| `VOLT_PINS` | – | default certificate pins for every app |
-| `VOLT_BUNDLETOOL` | – | path to bundletool, for `.aab` builds |
-| `VOLT_HSTS` | – | send the HSTS header |
-| `VOLT_ABIS` | `arm64-v8a,x86_64` | CPU types to package engines and C/C++ plugins for |
+| `POLY_DATA` | `./data` | SQLite DB, releases, keystore, build cache |
+| `POLY_ADMIN_PASSWORD` / `POLY_ADMIN_USER` | – | creates the first admin on startup if there are no users |
+| `POLY_WORKERS` | 4 | warm interpreter processes per app for the web preview |
+| `POLY_TIMEOUT` | 10 | seconds per script call before the worker is killed |
+| `POLY_DEVICE_KEY` | – | shared key baked into APKs. Without it, dev sync and update downloads are rejected |
+| `POLY_SESSION_DAYS` | 14 | IDE login lifetime |
+| `POLY_MAX_UPLOAD_MB` | 15 | maximum size of a camera or file upload |
+| `POLY_UPLOAD_DAYS` | 30 | delete uploads older than this (0 = never) |
+| `POLY_SANDBOX` / `POLY_SANDBOX_NET` | off / 1 | run scripts in an OS sandbox / allow network inside it |
+| `POLY_PINS` | – | default certificate pins for every app |
+| `POLY_BUNDLETOOL` | – | path to bundletool, for `.aab` builds |
+| `POLY_HSTS` | – | send the HSTS header |
+| `POLY_ABIS` | `arm64-v8a,x86_64` | CPU types to package engines and C/C++ plugins for |
 | `ANDROID_NDK_HOME` | auto | NDK location for C/C++ plugins |
-| `VOLT_APP_*` | – | passed to scripts (secrets, API URLs). All other server env vars are hidden from scripts |
-| `VOLT_KEYSTORE` / `VOLT_KEYSTORE_PASS` | generated | your release signing key for APKs |
+| `POLY_APP_*` | – | passed to scripts (secrets, API URLs). All other server env vars are hidden from scripts |
+| `POLY_KEYSTORE` / `POLY_KEYSTORE_PASS` | generated | your release signing key for APKs |
 | `ANDROID_HOME` | auto | only needed for building APKs (JDK + build-tools + a platform) |
 
 **Ops endpoints:** `GET /healthz` (no auth), `GET /metrics` (Prometheus format: requests, errors, latency and workers per app and channel; needs a viewer token).
 
 **Performance:** on the phone, an event (script `update` + `view` + native render) takes well under a frame for typical screens, and the engine starts in tens of milliseconds (Python's first launch also unpacks its standard library once).
 
-### Known limits (be honest with your security team)
+---
 
-- APK size depends on the language, per CPU type: Lua +0.3 MB, JavaScript +1 MB, Ruby +1 MB, PHP +6.9 MB, Python +12 MB plus a 7 MB standard library. Set `VOLT_ABIS=arm64-v8a` to ship only for modern phones, or build an `.aab` so Play delivers one CPU type per device.
-- Python apps can use the standard library. Packages with C extensions (numpy and others) need to be built for Android first. Pure-Python packages can be copied into the app folder.
-- PHP is built with a minimal extension set (json, mbstring, ctype, filter, tokenizer, date, pcre). It has no database drivers or curl; use `android.http(...)` instead.
-- Ruby is mruby, which has no gems from rubygems.org and no regular expressions. The core language, `require_relative` and JSON work.
-- Script code inside an APK can be read by anyone who unpacks it, as with any app. Keep secrets on a server.
-- Native code (plugins, engines) can't be updated over the air. That needs a new APK.
-- Not built in, but available through plugins: NFC, QR scanning (drop a ZXing jar into `native/libs`), payments, maps SDKs, Firebase push.
+## Limitations
 
-## Test status
+Please read this before using Polymorph in production.
 
-Verified on an Android 16 emulator (arm64), with the network turned off:
-- **All five languages:** each app rendered and handled taps: Lua to-do, JavaScript calculator with a multi-file `require`, Python counter, Ruby counter and PHP tip splitter.
-- **State:** the Lua app's state survived a full app restart.
-- **Direct Android calls from JavaScript:** device, storage, clipboard and toast.
+**All platforms**
+- Script code inside an app can be read by anyone who unpacks it, as with any app. Keep secrets on your server.
+- Native code (your Kotlin/Java/Swift/C plugins and the language engines) can't be hot-fixed. Changing it needs a new app release.
+- Scripts run one event at a time on their own thread. Heavy number crunching is slower than native code.
 
-With the network on:
-- **Live dev reload:** an edit appeared on the phone in about 2 seconds.
-- **Over-the-air update:** a signed bundle was accepted and its new code ran.
-- **Wrong key:** a bundle signed with a different key was rejected, and the app kept its built-in code.
+**Android**
+- App size grows with the language, per CPU type: Lua +0.3 MB, JavaScript +1 MB, Ruby +1 MB, PHP +7 MB, Python +19 MB. Building an `.aab` lets Google Play send each phone only what it needs.
+- Python packages with compiled parts (numpy and similar) don't work yet. Pure-Python packages can be copied into the app folder.
 
-Earlier in the project, verified on the emulator: components, styling, tabs, dialogs, charts, canvas, web views, Java/Kotlin/C plugins, camera, GPS, notifications and reminders, background jobs, Bluetooth permissions and infinite lists. `.aab` builds pass `bundletool validate`.
+**iPhone, iPad and Mac**
+- **App Store rules:** Apple allows downloaded scripts that fix bugs or change content, but not ones that change what the app is for or add features that skip review (App Store Review Guideline 2.5.2). Use hot fixes on iOS for fixes and small changes only.
+- **Python on iPhone** needs BeeWare's Python-Apple-support package. Download it separately and set `POLY_PYTHON_APPLE` to its folder. Its compiled modules must be turned into frameworks before an App Store upload (BeeWare's tools do this). Python adds about 40 MB.
+- Some screen elements and phone features exist only on Android so far:
+  - **Screen elements:** native plugin views, animations.
+  - **Phone features:** camera, file and contact pickers, GPS, sharing, background jobs, date/time pickers.
 
-**SDK, verified on the emulator with the example host app** (plain Java + `.aar`):
-- **Native ↔ script calls:** Java called a Python function, and Python called an exposed Java object and a Java lambda.
-- **Callbacks and events:** Python passed a callback that Java called three times, and Python sent events to a Java listener.
-- **Runtime swaps:** the script was replaced at runtime with JavaScript from a string, then with a signed Lua bundle from a URL. Python, JavaScript and Lua ran side by side in one process.
-- **Script screen:** a Lua screen was opened from Java and returned its result to `onActivityResult`.
+  On Apple these show a short "not available yet" note instead.
+- App Store and TestFlight uploads need your own Apple developer account. `poly.py ios --sign … --profile …` signs the app, and you upload it with Xcode's Organizer or Transporter.
 
-**Not yet verified:**
-- A physical phone and a 32-bit (armeabi-v7a) build.
-- The `.aar` inside a real Gradle / Android Studio project. The example app uses a script that does the same steps as Gradle.
-- After the move to on-device engines: camera, GPS and background jobs (re-tested only before the move), and Python packages beyond the standard library.
-- A Play Console upload, the Docker image and the GitHub Actions pipeline.
+**Languages**
+- PHP includes json, mbstring, ctype, filter, tokenizer, date and regular expressions. There are no database drivers or curl, so use `native.http(...)` instead.
+- Ruby is mruby. Most of the core language works, but there are no gems from rubygems.org and no regular expressions.
+- Lua and JavaScript have no package manager. Bring libraries as plain files in your app folder.
 
-## How it works
+---
+
+## What has been tested
+
+**Android** (emulator, Android 16, network off unless noted):
+- **All five languages:** each ran as a standalone app and handled taps, and state survived a restart.
+- **Developer tools:** live reload while editing; a signed hot fix was accepted and an unsigned one rejected.
+- **Add to an existing app** (`examples/android-host`, plain Java):
+  - Java called Python, and Python called Java.
+  - Callbacks and events worked in both directions.
+  - Scripts were swapped at runtime: Python → JavaScript → a signed Lua bundle from a URL.
+  - A Lua screen returned its result to Java.
+- **Earlier releases:** every screen element, the camera, GPS, notifications, background jobs, native plugins in Java/Kotlin/C, and `.aab` validation with bundletool.
+
+**Mac** (built and run on macOS):
+- All five languages ran as Mac apps and handled scripted taps.
+- State saved between runs; emoji and unicode worked.
+- A signed hot fix was applied, and a bundle signed with the wrong key was rejected.
+- **SDK in a plain Swift program:** JavaScript and Lua ran in one process and both called Swift code. A script callback came back as an event.
+
+**iPhone:**
+- All five languages compile and link as real iPhone apps (arm64) and as simulator apps.
+- **Not yet run on an iPhone screen,** because no simulator is installed on the build machine. The Swift code is the same as the tested Mac version.
+
+**Not tested yet:** a physical phone, the `.aar` inside Android Studio/Gradle, App Store and Play Store uploads, the Docker image, the GitHub Actions pipeline.
+
+---
+
+## Project layout
 
 ```
- APK: native renderer (Java)  ◀── JSON screen ──  engine: libvolt_<lang>.so  ──▶  your main.lua / .js / .py / .rb / .php
-        │                                              ▲          │
-        └── tap / change / result event ───────────────┘          └── android.* ──▶ device APIs and your plugins (JNI)
-
- optional: dev server ── code files ──▶ phone (live reload)        update host ── signed .zip ──▶ phone (OTA)
-```
-
-Each event calls your script's `update` and `view` inside the engine on the phone. The returned JSON becomes native views, and `_effect` keys trigger device actions. State is saved encrypted on the device after every event. When a script fails, a red error screen with the traceback appears. In dev builds, it clears as soon as you fix the code and save.
-
-## Layout
-
-```
-volt.py              CLI, APK/AAB/AAR builder, dev server, releases, signed bundles
-android/engine/      on-device engines: JNI bridge, per-language adapters, harnesses, prebuilt .so files
-runtimes/harness.*   preview bridges used by the web IDE and tests
-web/index.html       IDE + phone preview
-android/src/         native renderer + the SDK (dev.volt.engine: Volt, VoltEngine, ScriptSource, VoltCallback)
-android/stub/        tiny per-language JNI binding class (lets several languages run in one app)
-examples/            android-host: an existing-app integration example
-templates/           starter app for each language
-apps/<app>/          main.<ext>, lib/, assets/, tests/
-data/                runtime data (gitignored)
-.github/workflows/   CI/CD pipeline
+poly.py                 the command-line tool: builds apps, runs the web editor and the hot-fix server
+apps/                   example apps (one folder per app: main.*, lib/, assets/, tests/, app.json)
+engine/core/            the language adapters and the in-app runtime for each language (shared by all platforms)
+engine/android/         Android engine builds (.so files) and the script that makes them
+engine/apple/           iPhone/Mac engine builds (.a files) and the script that makes them
+android/                Android runtime: screen renderer + SDK (dev.polymorph.app, dev.polymorph.sdk)
+apple/Sources/          iPhone/Mac runtime: SwiftUI renderer + SDK
+examples/android-host/  an existing Android app that uses the SDK
+web/                    the web editor
+runtimes/               how scripts run in the web preview and in tests
+templates/              starter files for `poly.py new`
 ```
 
 MIT licensed.

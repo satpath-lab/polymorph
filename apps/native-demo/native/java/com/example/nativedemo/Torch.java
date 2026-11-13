@@ -6,9 +6,9 @@ import android.hardware.camera2.CameraManager;
 
 import org.json.JSONObject;
 
-import dev.volt.player.VoltPlugin;
+import dev.polymorph.app.PolyPlugin;
 
-public class Torch implements VoltPlugin {
+public class Torch implements PolyPlugin {
     @Override public void call(Host host, String method, JSONObject args, Result result) throws Exception {
         CameraManager cm = (CameraManager) host.activity().getSystemService(Context.CAMERA_SERVICE);
         String torchId = null;

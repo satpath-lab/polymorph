@@ -14,6 +14,7 @@ module Android
   def self.method_missing(n, *a) a.empty? ? T.new(n) : call(n, a[0], a[1] || {}) end
   def self.respond_to_missing?(*) true end
 end
+Native = Android
 load_err = nil
 begin; load ARGV[0]; rescue Exception => e; load_err = e; end
 $stdin.each_line do |line|

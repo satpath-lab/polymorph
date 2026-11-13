@@ -38,8 +38,8 @@ def update(s, e):
     elif id == "notify": s["_notify"] = {"title": "Field Kit", "text": "Hello from a script! Tap me.", "tag": "hello"}
     elif id == "remind": s["_notify"] = {"title": "Reminder", "text": "10 seconds are up ⏰", "at": 10, "tag": "reminder"}
     elif id == "contact": s["_contact"] = "who"
-    elif id == "share": s["_share"] = inputs.get("msg") or "Built with VoltForge ⚡"
-    elif id == "copy": s["_clipboard"] = inputs.get("msg") or "Built with VoltForge ⚡"; s["_toast"] = "Copied"
+    elif id == "share": s["_share"] = inputs.get("msg") or "Built with Polymorph ⚡"
+    elif id == "copy": s["_clipboard"] = inputs.get("msg") or "Built with Polymorph ⚡"; s["_toast"] = "Copied"
     elif id == "save-note":
         s["_store"] = {"note": inputs.get("note", "")}; s["note"] = inputs.get("note", ""); s["_toast"] = "Saved on this device"
     elif id == "call" and s["contact"]: s["_open"] = "tel:" + s["contact"]["phone"]

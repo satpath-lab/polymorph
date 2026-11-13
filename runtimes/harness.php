@@ -14,6 +14,7 @@ final class Android {
     public static function emit($n, $d = null) {}
     public static function __callStatic($n, $a) { return $a ? self::call($n, $a[0] ?? '', $a[1] ?? []) : new class($n) { public function __construct(private $n) {} public function __call($m, $x) { return Android::call($this->n, $m, []); } }; }
 }
+class_alias('Android', 'Native');
 function android() { static $p; return $p ??= new class { public function __call($n, $a) { return Android::call($n, $a[0] ?? '', $a[1] ?? []); } }; }
 $loadErr = null;
 try { (function () use ($path) { require $path; })(); } catch (Throwable $e) { $loadErr = $e; }

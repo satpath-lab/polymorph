@@ -11,17 +11,17 @@
         <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
         <intent><action android:name="android.intent.action.GET_CONTENT" /><data android:mimeType="*/*" /></intent>
     </queries>
-    <application android:label="{{LABEL}}" android:icon="@drawable/ic_volt" android:usesCleartextTraffic="{{CLEARTEXT}}"
-        android:theme="@style/VoltTheme" android:hardwareAccelerated="true" android:extractNativeLibs="true">
-        <activity android:name="dev.volt.player.MainActivity" android:exported="true" android:launchMode="singleTop"
+    <application android:label="{{LABEL}}" android:icon="@drawable/ic_poly" android:usesCleartextTraffic="{{CLEARTEXT}}"
+        android:theme="@style/PolyTheme" android:hardwareAccelerated="true" android:extractNativeLibs="true">
+        <activity android:name="dev.polymorph.app.MainActivity" android:exported="true" android:launchMode="singleTop"
             {{ORIENTATION}}android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <provider android:name="dev.volt.player.VoltFiles" android:authorities="{{PKG}}.files" android:exported="false" android:grantUriPermissions="true" />
-        <receiver android:name="dev.volt.player.VoltAlarm" android:exported="false" />
-        <service android:name="dev.volt.player.VoltJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
+        <provider android:name="dev.polymorph.app.PolyFiles" android:authorities="{{PKG}}.files" android:exported="false" android:grantUriPermissions="true" />
+        <receiver android:name="dev.polymorph.app.PolyAlarm" android:exported="false" />
+        <service android:name="dev.polymorph.app.PolyJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
     </application>
 </manifest>

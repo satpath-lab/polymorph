@@ -6,11 +6,11 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.view.View
 import android.view.ViewGroup
-import dev.volt.player.VoltPlugin
-import dev.volt.player.VoltViewPlugin
+import dev.polymorph.app.PolyPlugin
+import dev.polymorph.app.PolyViewPlugin
 import org.json.JSONObject
 
-class Gauge : VoltViewPlugin {
+class Gauge : PolyViewPlugin {
     class GaugeView(c: Context) : View(c) {
         var value = 0f
         private val dp = c.resources.displayMetrics.density
@@ -25,7 +25,7 @@ class Gauge : VoltViewPlugin {
         }
     }
 
-    override fun create(host: VoltPlugin.Host, props: JSONObject): View =
+    override fun create(host: PolyPlugin.Host, props: JSONObject): View =
         GaugeView(host.activity()).apply { layoutParams = ViewGroup.LayoutParams(-1, (140 * resources.displayMetrics.density).toInt()); value = props.optDouble("value", 0.0).toFloat() }
 
     override fun update(view: View, props: JSONObject) {

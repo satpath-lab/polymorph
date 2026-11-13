@@ -13,13 +13,13 @@ import android.widget.TextView;
 
 import org.json.JSONArray;
 
-import dev.volt.engine.ScriptSource;
-import dev.volt.engine.Volt;
-import dev.volt.engine.VoltCallback;
-import dev.volt.engine.VoltEngine;
+import dev.polymorph.sdk.ScriptSource;
+import dev.polymorph.sdk.Poly;
+import dev.polymorph.sdk.PolyCallback;
+import dev.polymorph.sdk.PolyEngine;
 
 public class HostActivity extends Activity {
-    VoltEngine pricing;
+    PolyEngine pricing;
     TextView out;
     final Handler main = new Handler(Looper.getMainLooper());
 
@@ -28,7 +28,7 @@ public class HostActivity extends Activity {
     }
 
     public class Clock {
-        public void every(int ms, int times, final VoltCallback cb) {
+        public void every(int ms, int times, final PolyCallback cb) {
             for (int i = 1; i <= times; i++) { final int n = i; main.postDelayed(() -> cb.call(n), (long) ms * i); }
         }
     }
@@ -54,25 +54,25 @@ public class HostActivity extends Activity {
         }).start()));
         ll.addView(button("4. Load signed script from server URL", () -> new Thread(() -> {
             try {
-                pricing.load(ScriptSource.url("http://10.0.2.2:8787/b/pricing-lua.zip", getString(getResources().getIdentifier("volt_key", "string", getPackageName()))));
+                pricing.load(ScriptSource.url("http://10.0.2.2:8787/b/pricing-lua.zip", getString(getResources().getIdentifier("poly_key", "string", getPackageName()))));
                 log("loaded " + pricing.lang + " script from URL");
             } catch (Exception e) { log("URL load failed: " + e.getMessage()); }
         }).start()));
-        ll.addView(button("5. Open script screen (Lua UI)", () -> Volt.openScreen(this, ScriptSource.asset("scripts/checkout"), 7)));
+        ll.addView(button("5. Open script screen (Lua UI)", () -> Poly.openScreen(this, ScriptSource.asset("scripts/checkout"), 7)));
         ll.addView(out);
         ScrollView sv = new ScrollView(this); sv.addView(ll);
         setContentView(sv);
 
-        Volt.expose("Tax", new Tax());
-        Volt.function("hostVersion", args -> "host 1.0");
-        Volt.engine(this)
+        Poly.expose("Tax", new Tax());
+        Poly.function("hostVersion", args -> "host 1.0");
+        Poly.engine(this)
             .source(ScriptSource.asset("scripts/pricing"))
             .expose("Clock", new Clock())
             .on("tick", (name, data) -> log("event tick: " + data))
             .on("error", (name, data) -> log("script error: " + data))
             .openAsync((engine, err) -> {
                 if (err != null) { log("engine failed: " + err); return; }
-                pricing = (VoltEngine) engine;
+                pricing = (PolyEngine) engine;
                 log("engine ready: " + pricing.lang);
             });
     }
@@ -84,6 +84,6 @@ public class HostActivity extends Activity {
     void log(final String s) { main.post(() -> out.append(s + "\n")); }
 
     @Override protected void onActivityResult(int rc, int res, Intent data) {
-        if (rc == 7) log("screen result: " + (data == null ? "cancelled" : data.getStringExtra("volt.result")));
+        if (rc == 7) log("screen result: " + (data == null ? "cancelled" : data.getStringExtra("poly.result")));
     }
 }

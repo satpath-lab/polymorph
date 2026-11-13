@@ -17,10 +17,10 @@ class _Android:
             def __call__(self, method="", args=None): return me.call(name, method, args)
             def __getattr__(self, m): return lambda *a: me.call(name, m, list(a))
         return T()
-import builtins; builtins.android = _Android()
+import builtins; builtins.android = builtins.native = _Android()
 mod, load_err = None, None
 try:
-    spec = importlib.util.spec_from_file_location("volt_app", path)
+    spec = importlib.util.spec_from_file_location("poly_app", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 except BaseException:

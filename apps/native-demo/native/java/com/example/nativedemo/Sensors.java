@@ -8,10 +8,10 @@ import android.hardware.SensorManager;
 
 import org.json.JSONObject;
 
-import dev.volt.player.VoltPlugin;
+import dev.polymorph.app.PolyPlugin;
 
 /** Streams accelerometer readings to the script as {type:"native", id:"motion"} events, ~4 per second. */
-public class Sensors implements VoltPlugin, SensorEventListener {
+public class Sensors implements PolyPlugin, SensorEventListener {
     private SensorManager sm;
     private Host host;
     private long last;
