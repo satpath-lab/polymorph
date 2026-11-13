@@ -14,7 +14,7 @@
 [![Ruby](https://img.shields.io/badge/Ruby-CC342D?style=flat-square&logo=ruby&logoColor=white)](#)
 [![PHP](https://img.shields.io/badge/PHP-777BB4?style=flat-square&logo=php&logoColor=white)](#)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![Visitors](https://hits.sh/github.com/satpath-lab/polymorph.svg?style=flat-square&label=visitors&color=6c3bff)](https://hits.sh/github.com/satpath-lab/polymorph/)
+![Visitors](https://visitor-badge.laobi.icu/badge?page_id=satpath-lab.polymorph&left_text=visitors&right_color=%236c3bff)
 
 <img src="docs/screenshots/hero.png" alt="Four Polymorph apps running on Android" width="900">
 
