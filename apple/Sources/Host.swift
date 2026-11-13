@@ -26,7 +26,7 @@ enum PolyHost {
     }
 
     static func handle(_ raw: String) -> String {
-        let engine = DispatchQueue.getSpecific(key: PolyEngine.key)
+        let engine = (Thread.current.threadDictionary["poly.engine"] as? WeakEngine)?.e
         guard let r = JSON.parse(raw) as? [String: Any] else { return "{\"error\":\"bad request\"}" }
         switch r["op"] as? String ?? "" {
         case "log":

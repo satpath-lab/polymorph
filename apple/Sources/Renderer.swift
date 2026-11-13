@@ -84,7 +84,7 @@ struct Node: View {
                 Text(str(n["text"])).font(.system(size: num(n["size"]) ?? 16, weight: .semibold))
                     .foregroundColor(Color(hex: n["color"]) ?? .white)
                     .padding(.vertical, 12).padding(.horizontal, 16)
-                    .frame(maxWidth: vertical ? .infinity : nil)
+                    .frame(maxWidth: (vertical || n["flex"] != nil || str(n["width"]) == "fill") ? .infinity : nil)
                     .background(Color(hex: n["bg"]) ?? m.accent)
                     .clipShape(RoundedRectangle(cornerRadius: num(n["radius"]) ?? 12))
             }.buttonStyle(.plain).disabled(n["enabled"] as? Bool == false)

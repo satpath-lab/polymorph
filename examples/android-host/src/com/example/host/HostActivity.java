@@ -61,6 +61,7 @@ public class HostActivity extends Activity {
         ll.addView(button("5. Open script screen (Lua UI)", () -> Poly.openScreen(this, ScriptSource.asset("scripts/checkout"), 7)));
         ll.addView(out);
         ScrollView sv = new ScrollView(this); sv.addView(ll);
+        sv.setOnApplyWindowInsetsListener((v, in) -> { v.setPadding(0, in.getSystemWindowInsetTop(), 0, in.getSystemWindowInsetBottom()); return in; });
         setContentView(sv);
 
         Poly.expose("Tax", new Tax());

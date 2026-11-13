@@ -1,80 +1,118 @@
+<div align="center">
+
 # 🦎 Polymorph
 
-**Write native mobile apps in Python, JavaScript, Lua, Ruby or PHP, and fix them live without a store update.**
+### Write real mobile apps in **Python, JavaScript, Lua, Ruby or PHP**.<br>Fix them live, without waiting for an app store.
 
-Polymorph puts a real interpreter for your language *inside* the app. Your script runs on the phone and draws real native screens: Android views on Android, SwiftUI on iPhone and Mac. Nothing is drawn by a server, and apps work offline.
+[![Android](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#-platforms-and-languages)
+[![iOS](https://img.shields.io/badge/iOS-000000?style=for-the-badge&logo=apple&logoColor=white)](#-platforms-and-languages)
+[![macOS](https://img.shields.io/badge/macOS-555555?style=for-the-badge&logo=apple&logoColor=white)](#-platforms-and-languages)
+<br>
+[![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)](#)
+[![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)](#)
+[![Lua](https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white)](#)
+[![Ruby](https://img.shields.io/badge/Ruby-CC342D?style=flat-square&logo=ruby&logoColor=white)](#)
+[![PHP](https://img.shields.io/badge/PHP-777BB4?style=flat-square&logo=php&logoColor=white)](#)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+
+<img src="docs/screenshots/hero.png" alt="Four Polymorph apps running on Android" width="900">
+
+<sub>Four real apps, each written in a different language and running fully offline on Android: a Lua to-do list, a JavaScript showcase, a JavaScript calculator and a PHP tip splitter.</sub>
+
+</div>
+
+---
+
+## ✨ What is Polymorph?
+
+I built Polymorph because I wanted to build phone apps without learning Kotlin and Swift, and to fix bugs without waiting days for a store review.
+
+With Polymorph, **a real interpreter for your language lives inside the app.** Your code runs on the phone and draws **real native screens** (Android views on Android, SwiftUI on iPhone and Mac), not a web page in a box. No server is needed, and apps work offline.
 
 You can use it in two ways:
 
-| | what it means | for whom |
-|---|---|---|
-| 📱 **Build a whole app** | Write the app in a scripting language. Polymorph turns it into an Android `.apk` / `.aab`, an iPhone app or a Mac app. | Teams who know Python, JS, PHP, Ruby or Lua but not Kotlin or Swift |
-| 🧩 **Add it to an existing app** | Keep your Kotlin, Java or Swift app, and write *some parts* in scripts: price rules, checks, feature switches, or whole screens. | Companies with an existing app |
+<table>
+<tr>
+<td width="50%" valign="top">
 
-Either way you get **🔥 hot fixes**: change the script, publish it, and every installed app picks up the new code the next time it opens. No new APK, no App Store or Play Store review. Each update is signed, and the app refuses code that isn't signed with your key.
+### 📱 Build a whole app
+Write your app in the language you already know. Polymorph turns it into an Android app (`.apk` / `.aab`), an iPhone app or a Mac app.
 
-The name: *polymorph* means "many forms". One app runs many languages and can change its form whenever you need it to.
+</td>
+<td width="50%" valign="top">
+
+### 🧩 Add it to an app you already have
+Keep your Kotlin, Java or Swift app, and write **only some parts** in a script: price rules, checks, feature switches or whole screens.
+
+</td>
+</tr>
+</table>
+
+And either way you get:
+
+> ### 🔥 Hot fixes
+> Change the script, publish it, and every installed app picks up the new code the next time it opens. **No new app release and no store review.** Every update is signed, and the app refuses code that isn't signed with your key.
+
+**Why the name?** A *polymorph* is something that can take many forms. One app, many languages, and it can change its form whenever you need it to.
 
 ---
 
-## Contents
+## 📸 Screenshots
 
-1. [Platforms and languages](#platforms-and-languages)
-2. [Quick start](#quick-start)
-3. [Build a whole app](#build-a-whole-app)
-4. [Hot fixes](#hot-fixes)
-5. [Add Polymorph to an existing app](#add-polymorph-to-an-existing-app)
-6. [Talking to native code](#talking-to-native-code)
-7. [Writing an app: screens and features](#writing-an-app)
-8. [App settings](#app-settings) · [Security](#security) · [Publishing to Google Play](#publishing-to-google-play) · [Team server](#team-server-optional)
-9. [Limitations](#limitations)
-10. [What has been tested](#what-has-been-tested)
-11. [Project layout](#project-layout)
+| Lua to-do list | JavaScript showcase | PHP tip splitter | Kotlin/Java app + scripts |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/screenshots/android-todo-lua.png" width="200"> | <img src="docs/screenshots/android-showcase.png" width="200"> | <img src="docs/screenshots/android-tips-php.png" width="200"> | <img src="docs/screenshots/android-sdk-host.png" width="200"> |
+| a whole app in Lua | charts, forms, tabs, styling | a whole app in PHP | an ordinary Java app calling Python, JavaScript and Lua |
+
+| Same JavaScript app on a Mac | Ruby app on a Mac |
+|:---:|:---:|
+| <img src="docs/screenshots/mac-calc-js.png" width="300"> | <img src="docs/screenshots/mac-hello-rb.png" width="300"> |
 
 ---
 
-## Platforms and languages
+## 🧭 Platforms and languages
 
-| | Android | iPhone / iPad | Mac |
+| | 🤖 Android | 📱 iPhone / iPad | 💻 Mac |
 |---|:---:|:---:|:---:|
-| Lua 5.4 | ✅ | ✅ | ✅ |
-| JavaScript (QuickJS) | ✅ | ✅ | ✅ |
-| Python 3.14 | ✅ | ✅ ¹ | ✅ |
-| Ruby (mruby 3.4) | ✅ | ✅ | ✅ |
-| PHP 8.4 | ✅ | ✅ | ✅ |
-| Whole apps | ✅ | ✅ | ✅ |
-| Add to an existing app (SDK) | ✅ `.aar` | ✅ Xcode folder | ✅ Xcode folder |
+| **Lua** 5.4 | ✅ | ✅ | ✅ |
+| **JavaScript** | ✅ | ✅ | ✅ |
+| **Python** 3.14 | ✅ | ✅ ¹ | ✅ ¹ |
+| **Ruby** (mruby) | ✅ | ✅ | ✅ |
+| **PHP** 8.4 | ✅ | ✅ | ✅ |
+| Build a whole app | ✅ | ✅ | ✅ |
+| Add to an existing app | ✅ | ✅ | ✅ |
 | Hot fixes | ✅ | ✅ ² | ✅ |
 
-¹ Python on iPhone uses BeeWare's Python build, downloaded separately (see [Limitations](#limitations)).
-² Apple's rules limit what downloaded code may change (see [Limitations](#limitations)).
+<sub>¹ Needs one extra download (see <a href="#%EF%B8%8F-limitations">Limitations</a>). ² Apple limits what a hot fix may change (see <a href="#%EF%B8%8F-limitations">Limitations</a>).</sub>
 
 ---
 
-## Quick start
+## 🚀 Quick start
 
-You need Python 3 on your computer. For Android builds you need the Android SDK and a JDK; for Apple builds you need a Mac with Xcode.
+**You need:** Python 3. For Android apps: the Android SDK and Java. For iPhone and Mac apps: a Mac with Xcode.
 
 ```bash
-python3 poly.py serve            # web editor with a live phone preview → http://localhost:8787
-python3 poly.py apk todo-lua     # Android app       → data/build/todo-lua-prod.apk
-python3 poly.py ios todo-lua     # iPhone app        → data/build/todo-lua-ios.app
-python3 poly.py mac todo-lua     # Mac app           → data/build/todo-lua-macos.app
+git clone https://github.com/<you>/polymorph.git && cd polymorph
+
+python3 poly.py serve            # editor with a live phone preview → open http://localhost:8787
+python3 poly.py apk todo-lua     # Android app
+python3 poly.py ios todo-lua     # iPhone app
+python3 poly.py mac todo-lua     # Mac app
 ```
 
-`apps/` contains ready-made examples in every language: `todo-lua`, `calc-js`, `counter-py`, `hello-rb`, `tips-php`, and more.
+Finished apps go to `data/build/`. The `apps/` folder has ready-made examples in every language.
 
 ---
 
-## Build a whole app
+## 📱 Build a whole app
 
-**1. Create an app** in the language you like:
+**1. Create an app** in your favourite language:
 
 ```bash
-python3 poly.py new shop python      # creates apps/shop/main.py
+python3 poly.py new shop python      # makes apps/shop/main.py
 ```
 
-**2. Write three functions.** `init` gives the starting data, `update` reacts to taps, and `view` describes the screen:
+**2. Write three small functions:** what the app starts with, what happens on a tap, and what the screen looks like.
 
 ```python
 def init():
@@ -92,119 +130,121 @@ def view(state):
     ]}}
 ```
 
-**3. Try it** in the browser preview (`poly.py serve`), or on a real phone while you edit:
+**3. See it live** while you edit, in the browser (`poly.py serve`) or on your phone:
 
 ```bash
-python3 poly.py apk shop --dev http://192.168.1.10:8787     # Android: the phone reloads every time you save
-python3 poly.py ios shop --simulator --dev http://localhost:8787
+python3 poly.py apk shop --dev http://192.168.1.10:8787     # the phone reloads every time you save
 ```
 
 **4. Build the real app:**
 
 ```bash
-python3 poly.py apk shop                      # Android .apk (add --format aab for Google Play)
+python3 poly.py apk shop                 # Android (add --format aab for Google Play)
 python3 poly.py ios shop --sign "Apple Development: you@example.com (TEAMID)" --profile shop.mobileprovision
 python3 poly.py mac shop --open
 ```
 
-Apps can have many files and folders (`lib/`, `assets/`). See [Writing an app](#writing-an-app) for every screen element and phone feature.
+Apps can have many files and folders (`lib/`, `assets/`, images, fonts). See the [Reference](#-reference) for every screen element and phone feature.
 
 ---
 
-## Hot fixes
+## 🔥 Hot fixes
 
-Ship a fix to every installed app, with no store update.
-
-**1. Turn it on** in `apps/<app>/app.json`:
+**1.** Turn them on in `apps/shop/app.json`:
 
 ```json
-{ "updates": { "url": "https://your-server.com/b/shop.zip", "check": "launch" } }
+{ "updates": { "url": "https://your-site.com/shop.zip", "check": "launch" } }
 ```
 
-`check` is `"launch"` (every time the app opens) or a number of minutes.
+`"launch"` checks every time the app opens. A number such as `"60"` checks at most once every 60 minutes.
 
-**2. Build the app once** (`poly.py apk shop` / `poly.py ios shop`) and release it as usual. Your public key is built into it automatically.
+**2.** Build and release the app once, as usual.
 
-**3. Whenever you need a fix,** change the script and publish it in one of two ways:
-- `python3 poly.py bundle shop --out public/` writes `shop.zip` and `shop.zip.sig`. Upload both anywhere: your website, S3, GitHub Pages, a CDN.
-- Or run `poly.py serve` on your server; it publishes the deployed release at `/b/shop.zip` for you.
+**3.** Whenever you need a fix, change the script and run:
 
-**What the app does:** it downloads the new code, checks the signature, and switches to it. If the signature is wrong, or the phone is offline, it keeps running the code it already has.
+```bash
+python3 poly.py bundle shop --out public/      # makes shop.zip + shop.zip.sig
+```
 
-> 🔑 Back up `data/bundle-signing.pem`. It's your signing key: without it you can't send fixes to apps that are already installed.
+Upload both files anywhere (your website, S3, GitHub Pages) and you're done. Or run `poly.py serve` on your server, and it publishes them for you at `/b/shop.zip`.
+
+**What the app does:** it downloads the new code, checks the signature, and switches to it. If the signature is wrong, or the phone is offline, it simply keeps the code it already has.
+
+> 🔑 **Back up `data/bundle-signing.pem`.** It's your signing key. Without it you can't send fixes to apps that are already installed.
 
 ---
 
-## Add Polymorph to an existing app
+## 🧩 Add it to an app you already have
 
-### Android (Kotlin or Java)
+### 🤖 Android (Kotlin or Java): 5 steps
 
-**Step 1. Make the library** with only the languages you need:
+**1. Make the library** with only the languages you need:
 
 ```bash
-python3 poly.py aar --langs python,js        # → data/build/polymorph-sdk.aar
+python3 poly.py aar --langs python,js
 ```
 
-**Step 2. Add it to your project.** Copy the file to `app/libs/` and add one line to `app/build.gradle.kts`:
+**2. Add it to your project.** Copy `data/build/polymorph-sdk.aar` into `app/libs/`, and add one line to `app/build.gradle.kts`:
 
 ```kotlin
 dependencies { implementation(files("libs/polymorph-sdk.aar")) }
 ```
 
-**Step 3. Put your scripts** in `app/src/main/assets/scripts/` (for example `scripts/pricing/main.py`).
+**3. Put your script** in `app/src/main/assets/scripts/pricing/main.py`:
 
-**Step 4. Share your own code with the scripts, and run them:**
+```python
+def price(amount, country):
+    return amount * (1 + native.Tax.rate(country))
+```
+
+**4. Share your own code with the script, and run it:**
 
 ```kotlin
 class Tax { fun rate(country: String) = if (country == "DE") 0.19 else 0.0 }
 
-Poly.expose("Tax", Tax())                              // scripts can now call native.Tax.rate("DE")
+Poly.expose("Tax", Tax())                                   // the script can now call native.Tax.rate(...)
 
-val pricing = Poly.engine(this)
-    .source(ScriptSource.asset("scripts/pricing"))
-    .open()
-
-val total = pricing.invoke("price", 100, "DE")        // run a script function and get its answer
+val pricing = Poly.engine(this).source(ScriptSource.asset("scripts/pricing")).open()
+val total = pricing.invoke("price", 100, "DE")              // → 119.0
 ```
 
-**Step 5 (optional). Hot-fix the script** whenever you want:
+**5. Update the script whenever you like**, with no app release:
 
 ```kotlin
-pricing.load(ScriptSource.url("https://your-server.com/b/pricing.zip", PUBLIC_KEY))
+pricing.load(ScriptSource.url("https://your-site.com/pricing.zip", PUBLIC_KEY))   // print the key with: poly.py pubkey
 ```
 
-**Step 6 (optional). Show a whole screen written in a script:**
+**Bonus:** show a whole screen written in a script, and get its result back:
 
 ```kotlin
-Poly.openScreen(this, ScriptSource.asset("scripts/checkout"), 1)
-// the script closes the screen with  _finish = {...}  and you get the data in onActivityResult
+Poly.openScreen(this, ScriptSource.asset("scripts/checkout"), 1)    // the result arrives in onActivityResult
 ```
 
-A complete working example is in [examples/android-host](examples/android-host).
+A complete working example app is in [`examples/android-host`](examples/android-host).
 
-### iPhone, iPad and Mac (Swift)
+### 📱 iPhone, iPad and Mac (Swift): 3 steps
 
-**Step 1. Make the SDK folder** with only the languages you need:
+**1. Make the SDK folder:**
 
 ```bash
-python3 poly.py apple-sdk --langs js,lua       # → data/build/PolymorphSDK
+python3 poly.py apple-sdk --langs js,lua
 ```
 
-**Step 2. Drag it into Xcode** and set three build settings. The exact values are in `PolymorphSDK/README.md`.
+**2. Drag `data/build/PolymorphSDK` into Xcode** and set three build settings. Its own `README.md` lists the exact values to copy and paste.
 
-**Step 3. Use it:**
+**3. Use it:**
 
 ```swift
-Poly.expose("Tax") { method, args in 0.19 }                         // scripts can call native.Tax.rate()
+Poly.expose("Tax") { method, args in 0.19 }
 let pricing = try PolyEngine(dir: Bundle.main.resourceURL!.appendingPathComponent("scripts/pricing"))
 let total = try pricing.invoke("price", 100, "DE")
 
-PolyScreen(source: .bundled("scripts/checkout"))                    // a SwiftUI view drawn by a script
+PolyScreen(source: .bundled("scripts/checkout"))        // a SwiftUI screen drawn by a script
 ```
 
 ---
 
-## Talking to native code
+## 🔌 Talking to native code
 
 The same calls work in every language. `native` and `android` are two names for the same object.
 
@@ -232,9 +272,14 @@ The same calls work in every language. `native` and `android` are two names for 
 
 **In Swift**, the same three things are `Poly.expose(name) { method, args in … }`, `PolyCallback.call(…)` and `engine.on("paid") { data in … }`.
 
+
 ---
 
-## Writing an app
+## 📚 Reference
+
+Everything below is detail you can look up when you need it.
+
+### Writing an app
 
 Every app is `apps/<name>/main.<lua|py|php|js|rb>` and has the same three functions:
 
@@ -259,7 +304,7 @@ end
 
 **Event:** also includes `store` (this device's saved data) and `device` (`platform`, `sdk`, `model`, `brand`, `lang`, `dark`, `width`, `height`).
 
-### Phone features
+#### Phone features
 
 Set any of these keys on the state you return. The phone performs the action once. Anything that produces a value sends back an event `{type: "result", id, value}`, where `value` is either the data or `{error: "cancelled" | "denied" | ...}`. Runtime permissions are requested automatically.
 
@@ -282,15 +327,15 @@ Also on the phone:
 
 The web preview fakes all of these: a file chooser stands in for the camera, it uses the browser's geolocation and notifications, and the contact picker returns a sample contact. See `apps/field-kit` for a demo that uses every feature, with tests.
 
-### Big lists
+#### Big lists
 
-`{type: "list", id: "feed", items: [...], onEnd: "more", gap: 8}` renders with Android's recycling `ListView`. Only the visible rows exist, so thousands of rows scroll smoothly. When the user reaches the end, `onEnd` is sent as a tap event so you can load more, and the scroll position is kept across updates. Use it on a screen with `scroll: false`; the list then fills the remaining space. On a scrolling screen it falls back to a plain column.
+`{type: "list", id: "feed", items: [...], onEnd: "more", gap: 8}` shows long lists smoothly: only the rows on screen are drawn, so thousands of rows scroll smoothly. When the user reaches the end, `onEnd` is sent as a tap event so you can load more, and the scroll position is kept across updates. Use it on a screen with `scroll: false`; the list then fills the remaining space. On a scrolling screen it falls back to a plain column.
 
-### Background jobs
+#### Background jobs
 
 `_background = {every: 15}` schedules a periodic job (Android's minimum is 15 minutes) that runs even when the app is closed or after a reboot. Each run calls your script on the phone with `{type: "background"}`, and any `_notify` / `_store` it returns is applied. `_background = {on: false}` cancels it. For instant push messages, add the Firebase SDK as a plugin jar.
 
-### Screen building blocks
+#### Screen building blocks
 
 | type | props |
 |---|---|
@@ -306,7 +351,7 @@ The web preview fakes all of these: a file chooser stands in for the camera, it 
 | `radio` | `id`, `options`, `value`, `horizontal` → `change` event |
 | `image` | `src` (a URL, or a file in `apps/<name>/assets/`), `fit` (cover/contain) |
 | `chart` | `kind` (line/bar/pie/donut), `series: [{values, color}]` or `data`, `labels`, `colors`, `height` |
-| `canvas` | `ops`: `rect` / `circle` / `line` / `path` / `arc` / `text` in dp, with `color`, `stroke`, `fill`, `opacity`. With an `id`, taps send `{x, y}` |
+| `canvas` | `ops`: `rect` / `circle` / `line` / `path` / `arc` / `text`, measured in screen points, with `color`, `stroke`, `fill`, `opacity`. With an `id`, taps send `{x, y}` |
 | `web` | `url` or `html`. Use it for maps (Leaflet / Google Maps JS), embeds, rich text, dashboards |
 | `video` | `src`, `autoplay`, `loop`, `muted`, `controls`. A playback failure sends `{type: "error", id}` |
 | `list` | recycled rows: `id`, `items`, `onEnd`, `gap` |
@@ -330,7 +375,7 @@ The web preview fakes all of these: a file chooser stands in for the camera, it 
 
 **Date and time pickers:** `_pickDate = {id, value: "2026-12-24"}` and `_pickTime = {id, value: "09:30"}` open native pickers and return `"YYYY-MM-DD"` / `"HH:MM"`.
 
-### Your own Java, Kotlin or C code inside a Polymorph app
+#### Your own Java, Kotlin or C code
 
 Anything the scripts can't do, you write natively and call from any language:
 
@@ -338,7 +383,7 @@ Anything the scripts can't do, you write natively and call from any language:
 apps/<app>/native/
   java/com/acme/Torch.java     class Torch implements dev.polymorph.app.PolyPlugin
   kotlin/Battery.kt            class Battery : PolyPlugin
-  c/fasthash.c                 JNI → libfasthash.so (one .c = one library; a folder = one library)
+  c/fasthash.c                 C code (one .c file or folder = one library)
   libs/zxing-core.jar          third-party jars (e.g. QR scanning, crypto, SDKs)
   permissions.txt              extra manifest permissions, one per line
 ```
@@ -364,14 +409,13 @@ s._native = {plugin = "Torch", method = "on", id = "torch", args = {}}   -- resu
 Native code ships in the APK, so changing it needs a new APK build. Scripts stay live-editable as before. The `apps/native-demo` app shows each kind:
 - flashlight (Java)
 - battery (Kotlin)
-- FNV-1a hashing (C via JNI)
+- fast text hashing (C)
 - live accelerometer stream (Java + `emit`)
 - Bluetooth LE scan (Java + runtime permissions)
 - background job and a 1,000+ row infinite list
 
----
 
-## App settings
+### App settings
 
 Settings live in `apps/<app>/app.json`.
 
@@ -395,7 +439,7 @@ Every security and behavior feature can be switched on or off per app. Any key y
 | feature | on | off |
 |---|---|---|
 | `requireHttps` | script updates must come from `https://`, and plain HTTP is disabled in the APK | allows HTTP (for internal networks) |
-| `encryptStorage` | app state, cached screens and storage are encrypted with AES-256-GCM using a hardware-backed Android Keystore key | stored as plain text |
+| `encryptStorage` | everything the app saves on the phone is encrypted with a key locked inside the phone's secure hardware (AES-256) | stored as plain text |
 | `blockScreenshots` | screenshots and screen recording are blocked on every screen (`secure: true` does it per screen) | allowed |
 | `cacheScreens` | the last screen is shown instantly while the engine starts | the screen is drawn once the script has run |
 | `backgroundJobs` | scheduled background runs | disabled, and the boot permission is removed |
@@ -403,22 +447,22 @@ Every security and behavior feature can be switched on or off per app. Any key y
 
 `updates` is optional. Leave it out for a fully bundled app. Add `"publicKey"` to use your own signing key, or `"unsigned": true` to skip signatures (not recommended). Dev builds (`--dev`) may use `http://` so you can develop locally.
 
-## Security
+### Security
 
 - **Code integrity:** over-the-air script bundles must carry a valid ECDSA P-256 signature from your key, or the phone refuses them and keeps its current code.
 - **In transit:** HTTPS (required for script updates by default) plus optional **certificate pinning**. Run `python3 poly.py pin https://your-server` and put the printed pins in `app.json`. A server presenting a certificate that is not pinned is rejected before any data is sent. Pin your CA's intermediate certificate so routine certificate renewals keep working.
-- **On the phone:** app state, cached screens and device storage are encrypted with an Android Keystore AES-256-GCM key that cannot be exported. Screenshots can be blocked. Plain HTTP is disabled in HTTPS builds.
+- **On the phone:** everything the app saves is encrypted with a key that stays locked inside the phone's secure hardware (AES-256-GCM, Android Keystore). Screenshots can be blocked. Plain HTTP is disabled in HTTPS builds.
 - **On the dev/update server:** PBKDF2 password hashes, tokens stored only as hashes, roles, an audit log, login lockout after 10 failures per IP within 10 minutes, `X-Frame-Options` / `nosniff` / `Referrer-Policy` headers, HSTS (`POLY_HSTS=1` or set automatically behind an HTTPS proxy), and an optional device key.
 - **Preview sandbox:** with `POLY_SANDBOX=1`, scripts running in the web preview run under `sandbox-exec` (macOS) or `bubblewrap` (Linux). A script can read its own app folder but not the database, other apps or `~/.ssh`, and cannot write files. `POLY_SANDBOX_NET=0` also blocks network access.
 
-## Publishing to Google Play
+### Publishing to Google Play
 
 - `app.json` sets the package ID, version, icon, orientation and SDK levels. `targetSdk` defaults to 35, which Google Play requires.
 - Build an **Android App Bundle** with `python3 poly.py apk myapp --format aab`, or pick `.aab` in the IDE.
 - Bundles need Google's `bundletool`. Download `bundletool-all-<version>.jar` from github.com/google/bundletool/releases and set `POLY_BUNDLETOOL` to its path.
 - Use your own signing key with `POLY_KEYSTORE` / `POLY_KEYSTORE_PASS`.
 
-## Team server (optional)
+### Team server (optional)
 
 ```
  edit (IDE or your own editor + git)  ──▶  dev APKs and the preview reload on every save
@@ -442,7 +486,7 @@ Every security and behavior feature can be switched on or off per app. Any key y
 
   You can edit in the IDE's file tree or in your own editor. Every file in the app folder is watched.
 
-### Tests
+#### Tests
 
 Put JSON cases in `apps/<app>/tests/*.json`. Each step sends an event, and `expect` checks dotted paths in `state`, `ui` and `fx`:
 
@@ -455,7 +499,7 @@ Put JSON cases in `apps/<app>/tests/*.json`. Each step sends an event, and `expe
 
 Run them with `python3 poly.py test --all`, which exits with code 1 on failure (suitable for CI), or with the **Tests** tab in the IDE.
 
-### Users and roles
+#### Users and roles
 
 | role | can |
 |---|---|
@@ -470,11 +514,11 @@ python3 poly.py token alice --label github-ci     # long-lived API token for CI
 
 With no users, the server runs in **open mode** (everyone is admin) and shows a warning banner. That is meant for local development only. Session and API tokens are stored only as SHA-256 hashes. Every write is recorded in the **audit log** (IDE tab or `GET /api/audit`).
 
-### Automatic builds (CI)
+#### Automatic builds (CI)
 
 [.github/workflows/polymorph.yml](.github/workflows/polymorph.yml) runs every app's tests on each push and pull request. On `main`, it uploads each changed app (`POST /api/sync/<app>` with a tar.gz) and creates a release. An admin then deploys it from the IDE. Add `"deploy": true` to the release call if you want continuous deployment. Set the repository secrets `POLY_URL` and `POLY_API_TOKEN`.
 
-### Running the team server
+#### Running the team server
 
 ```bash
 POLY_ADMIN_PASSWORD='change-me-now' docker compose up -d
@@ -507,78 +551,96 @@ The server is optional: release apps run without it. Host it when your team want
 
 **Performance:** on the phone, an event (script `update` + `view` + native render) takes well under a frame for typical screens, and the engine starts in tens of milliseconds (Python's first launch also unpacks its standard library once).
 
----
-
-## Limitations
-
-Please read this before using Polymorph in production.
-
-**All platforms**
-- Script code inside an app can be read by anyone who unpacks it, as with any app. Keep secrets on your server.
-- Native code (your Kotlin/Java/Swift/C plugins and the language engines) can't be hot-fixed. Changing it needs a new app release.
-- Scripts run one event at a time on their own thread. Heavy number crunching is slower than native code.
-
-**Android**
-- App size grows with the language, per CPU type: Lua +0.3 MB, JavaScript +1 MB, Ruby +1 MB, PHP +7 MB, Python +19 MB. Building an `.aab` lets Google Play send each phone only what it needs.
-- Python packages with compiled parts (numpy and similar) don't work yet. Pure-Python packages can be copied into the app folder.
-
-**iPhone, iPad and Mac**
-- **App Store rules:** Apple allows downloaded scripts that fix bugs or change content, but not ones that change what the app is for or add features that skip review (App Store Review Guideline 2.5.2). Use hot fixes on iOS for fixes and small changes only.
-- **Python on iPhone** needs BeeWare's Python-Apple-support package. Download it separately and set `POLY_PYTHON_APPLE` to its folder. Its compiled modules must be turned into frameworks before an App Store upload (BeeWare's tools do this). Python adds about 40 MB.
-- Some screen elements and phone features exist only on Android so far:
-  - **Screen elements:** native plugin views, animations.
-  - **Phone features:** camera, file and contact pickers, GPS, sharing, background jobs, date/time pickers.
-
-  On Apple these show a short "not available yet" note instead.
-- App Store and TestFlight uploads need your own Apple developer account. `poly.py ios --sign … --profile …` signs the app, and you upload it with Xcode's Organizer or Transporter.
-
-**Languages**
-- PHP includes json, mbstring, ctype, filter, tokenizer, date and regular expressions. There are no database drivers or curl, so use `native.http(...)` instead.
-- Ruby is mruby. Most of the core language works, but there are no gems from rubygems.org and no regular expressions.
-- Lua and JavaScript have no package manager. Bring libraries as plain files in your app folder.
 
 ---
 
-## What has been tested
+## ⚠️ Limitations
 
-**Android** (emulator, Android 16, network off unless noted):
-- **All five languages:** each ran as a standalone app and handled taps, and state survived a restart.
-- **Developer tools:** live reload while editing; a signed hot fix was accepted and an unsigned one rejected.
-- **Add to an existing app** (`examples/android-host`, plain Java):
-  - Java called Python, and Python called Java.
-  - Callbacks and events worked in both directions.
-  - Scripts were swapped at runtime: Python → JavaScript → a signed Lua bundle from a URL.
+I want you to know exactly what Polymorph can and can't do before you use it for something important.
+
+### Everywhere
+
+| | |
+|---|---|
+| 🔍 **Scripts can be read** | Anyone who unpacks an app can read the scripts inside it, as with any app. Keep passwords and secret keys on your server, never in a script. |
+| 🧱 **Native parts can't be hot-fixed** | Hot fixes change scripts only. Changes to Kotlin, Java, Swift or C code, or to Polymorph itself, need a normal app release. |
+| 🐢 **Heavy number-crunching is slower** | Scripts are great for screens and business rules. For things like image processing or 3D games, write that part in native code and call it from the script. |
+| 🌐 **No package installers** | `pip`, `npm`, `gem` and `composer` don't run inside the app. Plain-code libraries can be copied into your app folder. Libraries with compiled parts (for example numpy) don't work yet. |
+
+### 🤖 Android
+
+| | |
+|---|---|
+| 📦 **App size** | The language adds to the app's size (per type of phone processor): Lua about 0.3 MB, JavaScript and Ruby about 1 MB, PHP about 7 MB, Python about 19 MB. Publishing as an `.aab` lets Google Play send each phone only what it needs. |
+| ⚙️ **C code needs extra tools** | Your own C/C++ code inside an app needs the Android NDK (about 1 GB). Without it, the C parts are skipped and the app still builds. |
+
+### 📱 iPhone, iPad and 💻 Mac
+
+| | |
+|---|---|
+| 🍎 **Apple's rules for hot fixes** | Apple allows downloaded code that fixes bugs or changes content, but not code that changes what the app is for or adds big new features without review (App Store Review Guideline 2.5.2). Use hot fixes on iPhone for fixes and small changes. |
+| 🧪 **Not yet tested on an iPhone screen** | iPhone apps build correctly for real devices and the simulator, and the same code runs and is tested on the Mac. It hasn't run on a physical iPhone or in the simulator yet. |
+| 🐍 **Python needs a separate download** | Python on iPhone and Mac uses BeeWare's [Python-Apple-support](https://github.com/beeware/Python-Apple-support) (about 70 MB). Download it and set `POLY_PYTHON_APPLE` to its folder. Before an App Store upload, its compiled parts have to be packaged as frameworks; BeeWare's tools do this. |
+| 🚧 **Some features are Android-only for now** | Camera, photo/file/contact pickers, GPS, sharing, date and time pickers, background jobs, animations and custom native views. On iPhone and Mac these show a short "not available yet" note instead of crashing. |
+| ✍️ **You need an Apple developer account** | To put an app on a real iPhone or in the App Store, you need your own Apple developer account. Polymorph signs the app with `--sign` and `--profile`; you upload it with Xcode or Transporter. |
+
+### Languages
+
+| | |
+|---|---|
+| 🐘 **PHP** | Includes json, mbstring, ctype, filter, dates and regular expressions. There are no database drivers and no curl, so use `native.http(...)` for web requests. |
+| 💎 **Ruby** | Uses mruby, a small Ruby. The core language works, including `require_relative` and JSON. There are no gems from rubygems.org and no regular expressions. |
+| 🌙 **Lua and ⚡ JavaScript** | Lua is standard Lua 5.4. JavaScript is modern JavaScript (QuickJS) with `require` for your own files. There's no Node.js, so Node-only modules like `fs` and `http` aren't available. Use `native.files` and `native.http` instead. |
+
+---
+
+## ✅ What I've tested
+
+**🤖 Android** (Android 16 emulator):
+- **All 9 example apps:** each was built, installed and opened with no crashes and no script errors.
+- **Every language:** handled taps and typing, and kept its data after the app was closed and reopened.
+- **Native code:** plugins written in Java and Kotlin worked (flashlight, battery, motion sensor).
+- **Phone features:** location, notifications and the camera.
+- **Showcase app:** all four tabs (forms, charts, drawing, media).
+- **Live reload:** an edit appeared on the phone about 2 seconds after saving.
+- **Hot fixes:** a signed fix was accepted, and a fix signed with the wrong key was rejected.
+- **Adding to an existing app** ([`examples/android-host`](examples/android-host), a plain Java app):
+  - Java and Python called each other, with callbacks and messages in both directions.
+  - The script was swapped while the app was running: Python, then JavaScript, then a signed Lua update from a server.
   - A Lua screen returned its result to Java.
-- **Earlier releases:** every screen element, the camera, GPS, notifications, background jobs, native plugins in Java/Kotlin/C, and `.aab` validation with bundletool.
 
-**Mac** (built and run on macOS):
-- All five languages ran as Mac apps and handled scripted taps.
-- State saved between runs; emoji and unicode worked.
-- A signed hot fix was applied, and a bundle signed with the wrong key was rejected.
-- **SDK in a plain Swift program:** JavaScript and Lua ran in one process and both called Swift code. A script callback came back as an event.
+**💻 Mac:**
+- **Languages:** Lua, JavaScript, Ruby and PHP apps ran and handled several taps and inputs in a row. Python ran earlier in testing too.
+- **Hot fixes:** a signed fix was applied, and one signed with the wrong key was rejected.
+- **Adding to an existing app:** a plain Swift program ran JavaScript and Lua side by side, with calls and callbacks in both directions.
 
-**iPhone:**
-- All five languages compile and link as real iPhone apps (arm64) and as simulator apps.
-- **Not yet run on an iPhone screen,** because no simulator is installed on the build machine. The Swift code is the same as the tested Mac version.
+**📱 iPhone:**
+- All five languages build into real iPhone apps and simulator apps.
+- Not yet run on an iPhone screen (see [Limitations](#%EF%B8%8F-limitations)).
 
-**Not tested yet:** a physical phone, the `.aar` inside Android Studio/Gradle, App Store and Play Store uploads, the Docker image, the GitHub Actions pipeline.
+**Not tested yet:** a physical phone, Android Studio projects using the `.aar`, and App Store / Google Play uploads.
 
 ---
 
-## Project layout
+## 🗂️ Project layout
 
 ```
-poly.py                 the command-line tool: builds apps, runs the web editor and the hot-fix server
-apps/                   example apps (one folder per app: main.*, lib/, assets/, tests/, app.json)
-engine/core/            the language adapters and the in-app runtime for each language (shared by all platforms)
-engine/android/         Android engine builds (.so files) and the script that makes them
-engine/apple/           iPhone/Mac engine builds (.a files) and the script that makes them
-android/                Android runtime: screen renderer + SDK (dev.polymorph.app, dev.polymorph.sdk)
-apple/Sources/          iPhone/Mac runtime: SwiftUI renderer + SDK
-examples/android-host/  an existing Android app that uses the SDK
-web/                    the web editor
-runtimes/               how scripts run in the web preview and in tests
-templates/              starter files for `poly.py new`
+poly.py                 the tool: builds apps, runs the editor and the hot-fix server
+apps/                   example apps, one folder each (main.*, lib/, assets/, tests/, app.json)
+engine/core/            the code that runs each language inside an app (shared by all platforms)
+engine/android/         ready-built language engines for Android
+engine/apple/           ready-built language engines for iPhone and Mac
+android/                the Android side: screen drawing + the library for existing apps
+apple/Sources/          the iPhone/Mac side: screen drawing + the library for existing apps
+examples/android-host/  an ordinary Android app that uses Polymorph for some parts
+docs/screenshots/       the pictures in this file
+web/, runtimes/         the browser editor and its live preview
 ```
 
-MIT licensed.
+---
+
+<div align="center">
+
+**MIT licensed** · If Polymorph helps you, a ⭐ on GitHub means a lot.
+
+</div>

@@ -11,11 +11,10 @@ public enum PolyError: Error, CustomStringConvertible {
 public final class PolyEngine {
     public let lang: String
     public private(set) var dir: URL
-    let queue: DispatchQueue
+    let queue: ScriptThread
     private var handle: UnsafeMutableRawPointer?
     var objects: [String: (String, [Any]) throws -> Any?] = [:]
     var listeners: [String: [(Any?) -> Void]] = [:]
-    static let key = DispatchSpecificKey<PolyEngine>()
     static var resources: URL = Bundle.main.resourceURL ?? Bundle.main.bundleURL
 
     static let mains = ["main.lua": "lua", "main.js": "js", "main.py": "python", "main.rb": "ruby", "main.php": "php"]
@@ -26,8 +25,7 @@ public final class PolyEngine {
         guard let m, let l = PolyEngine.mains[m] ?? PolyEngine.mains["main." + (m as NSString).pathExtension] else { throw PolyError.load("no main.lua / main.js / main.py / main.rb / main.php in \(dir.path)") }
         guard poly_has(l) != 0 else { throw PolyError.load("this app was built without \(l)") }
         lang = l; self.dir = dir
-        queue = DispatchQueue(label: "poly.script.\(l)")
-        queue.setSpecific(key: PolyEngine.key, value: self)
+        queue = ScriptThread(name: "poly.script.\(l)")
         PolyHost.install()
         if l == "python" {
             let fw = Bundle.main.privateFrameworksURL?.appendingPathComponent("Python.framework/Versions/Current")
@@ -36,7 +34,10 @@ public final class PolyEngine {
         }
         let harness = PolyEngine.resources.appendingPathComponent("poly/harness.\(PolyEngine.ext[l]!)").path
         var err: UnsafeMutablePointer<CChar>?
-        let h = queue.sync { poly_open(l, dir.path, dir.appendingPathComponent(m).path, harness, &err) }
+        let h = queue.sync { () -> UnsafeMutableRawPointer? in
+            Thread.current.threadDictionary["poly.engine"] = WeakEngine(self)
+            return poly_open(l, dir.path, dir.appendingPathComponent(m).path, harness, &err)
+        }
         if h == nil {
             let msg = err.map { String(cString: $0) } ?? "engine failed to start"
             if let err { poly_free(err) }
@@ -45,7 +46,10 @@ public final class PolyEngine {
         handle = h
     }
 
-    deinit { if let h = handle { let l = lang; queue.sync { poly_close(l, h) } } }
+    deinit {
+        if let h = handle { let l = lang; queue.sync { poly_close(l, h) } }
+        queue.stop()
+    }
 
     public func call(_ fn: String, _ json: String) -> String {
         let run = { () -> String in
@@ -53,7 +57,7 @@ public final class PolyEngine {
             defer { poly_free(r) }
             return String(cString: r)
         }
-        return DispatchQueue.getSpecific(key: PolyEngine.key) === self ? run() : queue.sync(execute: run)
+        return queue.sync(run)
     }
 
     public func step(state: Any?, event: Any?) throws -> [String: Any] {
@@ -83,6 +87,46 @@ public final class PolyEngine {
         let fns = (listeners[name] ?? []) + (listeners["*"] ?? [])
         DispatchQueue.main.async { fns.forEach { $0(data) } }
     }
+}
+
+final class ResultBox<T> { var value: T? }
+final class WeakEngine { weak var e: PolyEngine?; init(_ e: PolyEngine) { self.e = e } }
+
+/// One long-lived thread per engine. Interpreters such as PHP expect every call on the same thread.
+public final class ScriptThread {
+    private var jobs: [() -> Void] = []
+    private let cond = NSCondition()
+    private var running = true
+    private var thread: Thread!
+
+    init(name: String) {
+        thread = Thread { [unowned self] in
+            while true {
+                self.cond.lock()
+                while self.jobs.isEmpty && self.running { self.cond.wait() }
+                if self.jobs.isEmpty { self.cond.unlock(); return }
+                let job = self.jobs.removeFirst()
+                self.cond.unlock()
+                autoreleasepool { job() }
+            }
+        }
+        thread.stackSize = 16 << 20
+        thread.name = name
+        thread.start()
+    }
+
+    public func async(_ job: @escaping () -> Void) { cond.lock(); jobs.append(job); cond.signal(); cond.unlock() }
+
+    public func sync<T>(_ job: @escaping () -> T) -> T {
+        if Thread.current == thread { return job() }
+        let box = ResultBox<T>()
+        let done = DispatchSemaphore(value: 0)
+        async { box.value = job(); done.signal() }
+        done.wait()
+        return box.value!
+    }
+
+    func stop() { cond.lock(); running = false; cond.signal(); cond.unlock() }
 }
 
 /// A script function handed to Swift; call it later to run it inside the script.
