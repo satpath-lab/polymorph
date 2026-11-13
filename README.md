@@ -92,7 +92,7 @@ And either way you get:
 **You need:** Python 3. For Android apps: the Android SDK and Java. For iPhone and Mac apps: a Mac with Xcode.
 
 ```bash
-git clone https://github.com/<you>/polymorph.git && cd polymorph
+git clone https://github.com/satpath-lab/polymorph.git && cd polymorph
 
 python3 poly.py serve            # editor with a live phone preview → open http://localhost:8787
 python3 poly.py apk todo-lua     # Android app

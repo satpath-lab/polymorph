@@ -27,6 +27,7 @@ jobs:
       - name: Sync changed apps and cut releases
         run: |
           set -euo pipefail
+          if [ -z "${POLY_URL:-}" ]; then echo "No POLY_URL secret set, so there's no team server to release to. Skipping."; exit 0; fi
           for app in $(git diff --name-only HEAD~1 HEAD -- apps | cut -d/ -f2 | sort -u); do
             [ -d "apps/$app" ] || continue
             echo "→ $app"
