@@ -11,7 +11,8 @@ final class Android {
         if ($n === 'clipboard') { if ($m === 'set') { self::$mem['_clip'] = $a['text'] ?? ''; return true; } return self::$mem['_clip'] ?? null; }
         return null;
     }
-    public static function __callStatic($n, $a) { return self::call($n, $a[0] ?? '', $a[1] ?? []); }
+    public static function emit($n, $d = null) {}
+    public static function __callStatic($n, $a) { return $a ? self::call($n, $a[0] ?? '', $a[1] ?? []) : new class($n) { public function __construct(private $n) {} public function __call($m, $x) { return Android::call($this->n, $m, []); } }; }
 }
 function android() { static $p; return $p ??= new class { public function __call($n, $a) { return Android::call($n, $a[0] ?? '', $a[1] ?? []); } }; }
 $loadErr = null;

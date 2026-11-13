@@ -1,3 +1,5 @@
+$__volt_cbs = {}
+$__volt_cbn = 0
 module JSON
   class ParserError < StandardError; end
   ESC = { 34 => '\\"', 92 => '\\\\', 8 => '\\b', 12 => '\\f', 10 => '\\n', 13 => '\\r', 9 => '\\t' }
@@ -20,6 +22,9 @@ module JSON
         i += 1
       end
       o << b << s.byteslice(st, n - st) << '"'
+    when Proc, Method
+      $__volt_cbn += 1; $__volt_cbs[$__volt_cbn] = v
+      o << '{"__volt_cb":' << $__volt_cbn.to_s << '}'
     when Array
       o << '['
       v.each_with_index { |x, i| o << ',' if i > 0; generate(x, o) }
@@ -121,12 +126,21 @@ module JSON
 end
 
 module Android
-  def self.call(name, method = '', args = {})
+  def self.hostcall(name, method, args)
     r = JSON.parse(__host(JSON.generate({ 'op' => 'call', 'plugin' => name.to_s, 'method' => method.to_s, 'args' => args })))
     raise r['error'] if r.is_a?(Hash) && r['error']
     r.is_a?(Hash) ? r['value'] : r
   end
-  def self.method_missing(name, method = '', args = {}) call(name.to_s, method, args) end
+  def self.call(name, method = '', args = {}) hostcall(name, method, args) end
+  def self.emit(name, data = nil) __host(JSON.generate({ 'op' => 'emit', 'name' => name.to_s, 'data' => data })); nil end
+  class Target
+    def initialize(n) @n = n end
+    def method_missing(m, *a) Android.hostcall(@n, m.to_s, a) end
+    def call(method = '', args = {}) Android.hostcall(@n, method, args) end
+  end
+  def self.method_missing(name, *a)
+    a.empty? ? Target.new(name.to_s) : hostcall(name.to_s, a[0], a[1] || {})
+  end
 end
 ANDROID = Android
 
@@ -178,6 +192,14 @@ def __volt(fn, arg)
   res = begin
     raise $__volt_err if $__volt_err
     a = JSON.parse(arg)
+    if fn == '__cb'
+      f = $__volt_cbs[a[0]]
+      raise 'callback was released' unless f
+      return JSON.generate({ 'value' => f.call(*a[1..-1]) })
+    end
+    if fn == '__release'
+      $__volt_cbs.delete(a[0]); return '{"value":true}'
+    end
     if fn == 'step'
       st = a['state']
       st = (respond_to?(:init, true) ? __send__(:init) : {}) if st.nil?

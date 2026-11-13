@@ -24,7 +24,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 final class VoltApp {
-    static final String[] EFFECTS = {"toast", "open", "vibrate", "camera", "pick", "location", "notify", "share", "clipboard", "contact", "store", "native", "background", "pickDate", "pickTime"};
+    static final String[] EFFECTS = {"toast", "open", "vibrate", "camera", "pick", "location", "notify", "share", "clipboard", "contact", "store", "native", "background", "pickDate", "pickTime", "finish"};
     static final String[] MAINS = {"main.lua", "main.js", "main.py", "main.rb", "main.php"};
     private static JSONObject cfg;
 

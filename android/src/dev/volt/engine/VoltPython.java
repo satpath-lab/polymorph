@@ -44,7 +44,6 @@ final class VoltPython {
         android.system.Os.setenv("VOLT_PYHOME", home.getAbsolutePath(), true);
         android.system.Os.setenv("HOME", ctx.getFilesDir().getAbsolutePath(), true);
         android.system.Os.setenv("TMPDIR", ctx.getCacheDir().getAbsolutePath(), true);
-        System.loadLibrary("python3.14");
         ready = true;
     }
 

@@ -14,12 +14,34 @@ class _Log:
     def flush(self): pass
 sys.stdout = sys.stderr = _Log()
 
+_CBS, _CBN = {}, [0]
+
+def _default(x):
+    if callable(x):
+        _CBN[0] += 1; _CBS[_CBN[0]] = x
+        return {"__volt_cb": _CBN[0]}
+    return str(x)
+
+def _enc(v): return json.dumps(v, default=_default, ensure_ascii=False)
+
+def _hostcall(name, method, args):
+    r = json.loads(_volt.host(_enc({"op": "call", "plugin": name, "method": method, "args": args})))
+    if isinstance(r, dict) and r.get("error"): raise RuntimeError(r["error"])
+    return r.get("value") if isinstance(r, dict) else r
+
+class _Target:
+    def __init__(self, name): self._name = name
+    def __call__(self, method="", args=None): return _hostcall(self._name, method, args if args is not None else {})
+    def __getattr__(self, method):
+        if method.startswith("__"): raise AttributeError(method)
+        return lambda *a: _hostcall(self._name, method, list(a))
+
 class _Android:
-    def call(self, name, method="", args=None):
-        r = json.loads(_volt.host(json.dumps({"op": "call", "plugin": name, "method": method, "args": args or {}})))
-        if isinstance(r, dict) and r.get("error"): raise RuntimeError(r["error"])
-        return r.get("value") if isinstance(r, dict) else r
-    def __getattr__(self, name): return lambda method="", args=None: self.call(name, method, args)
+    def call(self, name, method="", args=None): return _hostcall(name, method, args if args is not None else {})
+    def emit(self, name, data=None): _volt.host(_enc({"op": "emit", "name": name, "data": data}))
+    def __getattr__(self, name):
+        if name.startswith("__"): raise AttributeError(name)
+        return _Target(name)
 android = _Android()
 sys.modules["android_bridge"] = android
 import builtins; builtins.android = android
@@ -36,6 +58,12 @@ def __volt(fn, arg):
     try:
         if load_err: raise RuntimeError(load_err)
         a = json.loads(arg)
+        if fn == "__cb":
+            f = _CBS.get(a[0])
+            if f is None: raise RuntimeError("callback was released")
+            return _enc({"value": f(*a[1:])})
+        if fn == "__release":
+            _CBS.pop(a[0], None); return '{"value": true}'
         if fn == "step":
             st = a.get("state")
             if st is None: st = mod.init() if hasattr(mod, "init") else {}
@@ -49,4 +77,4 @@ def __volt(fn, arg):
             res = {"value": f(*(a if isinstance(a, list) else [a]))}
     except BaseException:
         res = {"error": traceback.format_exc(limit=4)}
-    return json.dumps(res, default=str, ensure_ascii=False)
+    return _enc(res)

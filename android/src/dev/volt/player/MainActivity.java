@@ -105,6 +105,7 @@ public class MainActivity extends Activity {
     static volatile MainActivity alive;
     String server = "", app = "", session, token = "", channel = "dev", source = "bundled";
     VoltEngine engine;
+    dev.volt.engine.ScriptSource sdkSource;
     Object state;
     File appDir;
     boolean locked, started, hasContent;
@@ -159,6 +160,12 @@ public class MainActivity extends Activity {
         if (session == null) { session = UUID.randomUUID().toString(); prefs.edit().putString("sid", session).apply(); }
         JSONObject cfg = VoltApp.cfg(this);
         server = cfg.optString("dev"); app = cfg.optString("app"); token = cfg.optString("token"); source = cfg.optString("source", "bundled");
+        sdkSource = dev.volt.engine.ScriptSource.fromIntent(getIntent());
+        if (sdkSource != null) {
+            String sid = getIntent().getStringExtra("volt.id");
+            app = sid != null ? sid : "screen-" + Integer.toHexString((getIntent().getStringExtra("volt.kind") + getIntent().getStringExtra("volt.value")).hashCode());
+            source = "sdk";
+        }
         locked = !app.isEmpty();
         if (!locked) { source = "dev"; server = prefs.getString("server", server); app = prefs.getString("app", ""); }
         VoltEngine.setHandler(hostHandler);
@@ -187,6 +194,9 @@ public class MainActivity extends Activity {
         net.execute(() -> {
             try {
                 if ("dev".equals(source)) syncDev();
+                else if (sdkSource != null && sdkSource.isRemote()) {
+                    try { sdkSource.fetch(this); } catch (Exception e) { android.util.Log.w("Volt", "script update failed: " + e); }
+                }
                 else if ("remote".equals(source) && remoteDue()) {
                     try { VoltApp.updateRemote(this); } catch (Exception e) { android.util.Log.w("Volt", "script update failed: " + e); }
                 }
@@ -205,12 +215,16 @@ public class MainActivity extends Activity {
     }
 
     void openEngine() throws Exception {
-        File d = VoltApp.scripts(this, source);
-        String m = VoltApp.mainFile(d);
-        if (m == null) throw new Exception("No main.lua / main.js / main.py / main.rb / main.php found");
         if (engine != null) { engine.close(); engine = null; }
-        engine = VoltEngine.open(this, d, m);
-        appDir = d;
+        dev.volt.engine.ScriptSource src = sdkSource;
+        if (src == null) {
+            File d = VoltApp.scripts(this, source);
+            String m = VoltApp.mainFile(d);
+            if (m == null) throw new Exception("No main.lua / main.js / main.py / main.rb / main.php found");
+            src = dev.volt.engine.ScriptSource.dir(d).main(m);
+        }
+        engine = dev.volt.engine.Volt.engine(this).source(src).handler(hostHandler).open();
+        appDir = engine.dir();
     }
 
     void syncDev() throws Exception {
@@ -1105,6 +1119,13 @@ public class MainActivity extends Activity {
                 else if (bg != null && bg.optBoolean("on", true)) { prefs.edit().putBoolean("bg:on", true).apply(); VoltJob.schedule(this, bg.optInt("every", 15)); }
                 else { prefs.edit().putBoolean("bg:on", false).apply(); VoltJob.cancel(this); }
             }
+            if (fx.has("finish")) {
+                Object fv = fx.opt("finish");
+                Intent data = new Intent().putExtra("volt.result", fv == null || fv == JSONObject.NULL ? null : fv.toString());
+                setResult(RESULT_OK, data);
+                finish();
+                return;
+            }
             if (fx.has("store") && fx.optJSONObject("store") != null) VoltApp.putStore(this, app, fx.optJSONObject("store"));
         } catch (Exception e) {
             Toast.makeText(this, "Native action failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -1491,7 +1512,11 @@ public class MainActivity extends Activity {
             case "open": return onMain(() -> { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(args.optString("url", method)))); return true; });
             case "app":
                 if (method.equals("info")) return new JSONObject().put("app", app).put("source", source).put("dir", appDir == null ? "" : appDir.getPath()).put("lang", engine == null ? "" : engine.lang);
-                if (method.equals("update")) { boolean changed = "remote".equals(source) && VoltApp.updateRemote(this); if (changed) reload(false); return changed; }
+                if (method.equals("update")) {
+                    boolean changed = sdkSource != null ? sdkSource.isRemote() && sdkSource.fetch(this) : "remote".equals(source) && VoltApp.updateRemote(this);
+                    if (changed) reload(false);
+                    return changed;
+                }
                 break;
         }
         return pluginSync(plugin, method, args);

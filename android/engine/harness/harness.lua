@@ -1,5 +1,6 @@
 local DIR, MAIN = __VOLT_DIR, __VOLT_MAIN
 package.path = DIR .. "/?.lua;" .. DIR .. "/?/init.lua;" .. DIR .. "/lib/?.lua;" .. package.path
+local CBS, CBN = {}, 0
 local esc = {['"']='\\"', ['\\']='\\\\', ['\b']='\\b', ['\f']='\\f', ['\n']='\\n', ['\r']='\\r', ['\t']='\\t'}
 local function enc(v, b)
   local t = type(v)
@@ -13,16 +14,21 @@ local function enc(v, b)
     b[#b+1] = '"' .. (v:gsub('[%c"\\]', function(c) return esc[c] or string.format("\\u%04x", c:byte()) end)) .. '"'
   elseif t == "table" then
     local n, arr = #v, true
+    if getmetatable(v) and getmetatable(v).__jsonarray then arr = true goto enc end
     for k in pairs(v) do if type(k) ~= "number" then arr = false break end end
+    ::enc::
     if arr then
       b[#b+1] = "[" for i = 1, n do if i > 1 then b[#b+1] = "," end enc(v[i], b) end b[#b+1] = "]"
     else
       b[#b+1] = "{" local first = true
-      for k, x in pairs(v) do if type(x) ~= "function" then
+      for k, x in pairs(v) do if true then
         if not first then b[#b+1] = "," end first = false
         enc(tostring(k), b) b[#b+1] = ":" enc(x, b) end end
       b[#b+1] = "}"
     end
+  elseif t == "function" then
+    CBN = CBN + 1; CBS[CBN] = v
+    b[#b+1] = '{"__volt_cb":' .. CBN .. '}'
   else b[#b+1] = "null" end
 end
 local function encode(v) local b = {} enc(v, b) return table.concat(b) end
@@ -71,12 +77,19 @@ local function decode(s)
 end
 print = function(...) local t = {} for i = 1, select('#', ...) do t[#t+1] = tostring((select(i, ...))) end __host(encode({op = "log", text = table.concat(t, "\t")})) end
 local android = {}
-function android.call(name, method, args)
-  local r = decode(__host(encode({op = "call", plugin = name, method = method or "", args = args or {}})))
-  if type(r) == "table" and r.error then error(r.error, 2) end
+local function hostcall(name, method, args)
+  local r = decode(__host(encode({op = "call", plugin = name, method = method or "", args = args})))
+  if type(r) == "table" and r.error then error(r.error, 3) end
   return r and r.value
 end
-setmetatable(android, {__index = function(_, name) return function(method, args) return android.call(name, method, args) end end})
+function android.call(name, method, args) return hostcall(name, method, args or {}) end
+function android.emit(name, data) __host(encode({op = "emit", name = name, data = data})) end
+setmetatable(android, {__index = function(_, name)
+  return setmetatable({}, {
+    __call = function(_, method, args) return hostcall(name, method, args or {}) end,
+    __index = function(_, method) return function(...) return hostcall(name, method, setmetatable({...}, {__jsonarray = true})) end end,
+  })
+end})
 local env = setmetatable({json = {encode = encode, decode = decode}, android = android}, {__index = _G})
 local chunk, lerr = loadfile(MAIN, "t", env)
 if chunk then local ok, e = xpcall(chunk, debug.traceback) if not ok then lerr = tostring(e) end end
@@ -91,6 +104,8 @@ function __volt(fn, arg)
   local ok, res = xpcall(function()
     local a = decode(arg)
     if fn == "step" then return step(a) end
+    if fn == "__cb" then local f = CBS[a[1]] if not f then error("callback was released", 0) end return {value = f(table.unpack(a, 2))} end
+    if fn == "__release" then CBS[a[1]] = nil return {value = true} end
     if lerr then error(lerr, 0) end
     local f = env[fn]
     if type(f) ~= "function" then error("no function " .. fn, 0) end

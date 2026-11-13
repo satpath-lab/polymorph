@@ -697,8 +697,20 @@ def app_main(d):
     return None
 
 
+def stub_dex():
+    src = os.path.join(ANDROID, "stub", "dev", "volt", "engine", "VoltEngine.java")
+    out = os.path.join(BUILD, "stub-%s.dex" % hashlib.sha1(open(src, "rb").read()).hexdigest()[:12])
+    if os.path.exists(out): return out
+    sdk = sdk_paths()
+    with tempfile.TemporaryDirectory() as t:
+        sh(["javac", "-nowarn", "-Xlint:-options", "-source", "8", "-target", "8", "-bootclasspath", sdk["jar"], "-d", t, src])
+        sh([sdk["d8"], "--release", "--min-api", "24", "--lib", sdk["jar"], "--output", t, os.path.join(t, "dev", "volt", "engine", "VoltEngine.class")])
+        os.makedirs(BUILD, exist_ok=True); shutil.copy(os.path.join(t, "classes.dex"), out)
+    return out
+
+
 def engine_parts(langs):
-    so, assets = [], {}
+    so, assets = [], {"volt/stub.dex": stub_dex()}
     for lang in langs:
         d = os.path.join(ANDROID, "engine", "prebuilt", lang)
         for abi in ABIS:
@@ -785,22 +797,38 @@ def build_apk(app, dev=None, server=None, label=None, out=None, fmt="apk"):
         return out
 
 
+AAR_MANIFEST = """<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.volt.engine">
+    <uses-sdk android:minSdkVersion="24" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application>
+        <activity android:name="dev.volt.player.VoltActivity" android:exported="false" android:theme="@style/VoltTheme"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:windowSoftInputMode="adjustResize" />
+        <provider android:name="dev.volt.player.VoltFiles" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true" />
+        <receiver android:name="dev.volt.player.VoltAlarm" android:exported="false" />
+        <service android:name="dev.volt.player.VoltJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
+    </application>
+</manifest>
+"""
+
+
 def build_aar(langs, out=None):
     sdk = sdk_paths()
     so, assets = engine_parts(langs)
     out = out or os.path.join(BUILD, "voltengine.aar")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        src = sorted(glob.glob(os.path.join(ANDROID, "src", "dev", "volt", "engine", "*.java")))
-        sh(["javac", "-nowarn", "-Xlint:-options", "-encoding", "UTF-8", "-source", "8", "-target", "8", "-bootclasspath", sdk["jar"], "-d", os.path.join(tmp, "c")] + src)
+        src = walk_ext(os.path.join(ANDROID, "src"), (".java",))
+        sh(["javac", "-nowarn", "-Xlint:-options", "-encoding", "UTF-8", "-source", "8", "-target", "8", "-bootclasspath", sdk["jar"] + os.pathsep + sdk["lambda"], "-d", os.path.join(tmp, "c")] + src)
         jar = os.path.join(tmp, "classes.jar")
         with zipfile.ZipFile(jar, "w", zipfile.ZIP_DEFLATED) as z:
             for base, _, files in os.walk(os.path.join(tmp, "c")):
                 for f in files: z.write(os.path.join(base, f), os.path.relpath(os.path.join(base, f), os.path.join(tmp, "c")))
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-            z.writestr("AndroidManifest.xml", '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.volt.engine"><uses-sdk android:minSdkVersion="24"/></manifest>')
+            z.writestr("AndroidManifest.xml", AAR_MANIFEST)
             z.writestr("R.txt", "")
             z.write(jar, "classes.jar")
+            for base, _, files in os.walk(os.path.join(ANDROID, "res")):
+                for f in files: z.write(os.path.join(base, f), "res/" + os.path.relpath(os.path.join(base, f), os.path.join(ANDROID, "res")))
             for abi, f in so: z.write(f, "jni/%s/%s" % (abi, os.path.basename(f)))
             for dst, f in assets.items(): z.write(f, "assets/" + dst)
     return out

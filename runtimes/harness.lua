@@ -79,7 +79,9 @@ local function fake(name, method, args)
   if name == "clipboard" then if method == "set" then mem._clip = args.text return true end return mem._clip end
   return nil
 end
-local android = setmetatable({call = function(n, m, a) return fake(n, m, a) end}, {__index = function(_, n) return function(m, a) return fake(n, m, a) end end})
+local android = setmetatable({call = function(n, m, a) return fake(n, m, a) end, emit = function() end}, {__index = function(_, n)
+  return setmetatable({}, {__call = function(_, m, a) return fake(n, m, a) end, __index = function(_, m) return function(...) return fake(n, m, {...}) end end})
+end})
 local env = setmetatable({json = {encode = encode, decode = decode}, android = android}, {__index = _G})
 local chunk, lerr = loadfile(path, "t", env)
 if chunk then local ok, e = pcall(chunk) if not ok then lerr = tostring(e) end end

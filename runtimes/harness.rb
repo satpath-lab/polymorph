@@ -9,7 +9,9 @@ module Android
     when 'clipboard' then method == 'set' ? (MEM['_clip'] = args['text'] || args[:text]; true) : MEM['_clip']
     end
   end
-  def self.method_missing(n, m = '', a = {}) call(n, m, a) end
+  def self.emit(*) nil end
+  class T; def initialize(n) @n = n end; def method_missing(m, *a) Android.call(@n, m.to_s, a) end; def respond_to_missing?(*) true end; end
+  def self.method_missing(n, *a) a.empty? ? T.new(n) : call(n, a[0], a[1] || {}) end
   def self.respond_to_missing?(*) true end
 end
 load_err = nil

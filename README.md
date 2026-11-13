@@ -9,7 +9,8 @@ You write three small functions in any of those languages. VoltForge puts a real
 - 🤖 **Direct Android access from scripts**: `android.device()`, `android.storage(...)`, `android.http(...)`, `android.clipboard(...)`, plus any plugin you write in Java, Kotlin or C
 - 🔌 **Your choice of where code lives**: bundled in the APK (fully offline), synced live from your computer while developing, or downloaded as **signed over-the-air updates** that you can push at any time
 - 🔥 **Live reload while developing**: save a file and the phone reloads in about a second, keeping its state
-- 🧩 **Drop-in library**: `volt.py aar` builds the engine as an `.aar` for any existing Android Studio project
+- 🧩 **SDK for existing apps**: add the `.aar`, expose your Java/Kotlin objects, and write any part of the app (logic or whole screens) in a script that you can replace at runtime
+- 🔁 **Two-way native bridge**: scripts call your native code, pass callbacks that native code calls later, and send events. Native code calls script functions
 - 📦 **Signed APKs and AABs** with no Gradle and no Android Studio, built straight from the SDK tools
 - 🏢 **Built for teams**: web IDE, tests, test-gated releases, roles, audit log, CI/CD
 
@@ -27,7 +28,7 @@ You write three small functions in any of those languages. VoltForge puts a real
 | Internal company tools: field service, inventory, approvals, check-ins | camera, GPS, storage, works offline; push fixes to every employee with a signed update |
 | Prototypes and MVPs | one file per app, live browser preview, signed APK in one click |
 | Apps whose rules change often (pricing, forms, workflows) | ship new script logic over the air, no store review |
-| Adding scripting to an existing Android app | use the `.aar` and call `VoltEngine` from your Kotlin or Java code |
+| Adding scripting to an existing Android app | add the `.aar`, expose your native classes, and ship rule or screen changes as signed script updates |
 | Teaching app development | five beginner-friendly languages with instant feedback |
 
 ## Quick start
@@ -58,18 +59,81 @@ Over-the-air updates in `app.json`:
 - Or let `volt.py serve` host them at `/b/<app>.zip`. It always serves the deployed release.
 - Bundles are signed with an ECDSA P-256 key kept in `data/bundle-signing.pem`. Its public key is built into the APK, and a bundle with a bad signature is rejected (the app keeps running its current code). Back this key up: without it you can't ship updates to installed apps.
 
-### Use the engine in your own Android project
+## Use it as an SDK in any Android app
+
+You don't have to build the whole app with VoltForge. Add the engine to an existing Kotlin or Java app and write only some parts in a script: pricing rules, validation, feature flags, whole screens. Your app can replace those scripts at any time by asking for a new one.
 
 ```bash
-python3 volt.py aar --langs python,js    # → data/build/voltengine.aar
+python3 volt.py aar --langs python,js,lua      # → data/build/voltengine.aar (pick only the languages you need)
 ```
 
+In Android Studio, copy the `.aar` to `app/libs/` and add `implementation(files("libs/voltengine.aar"))`. Its manifest entries (the script screen activity and helpers) merge automatically.
+
+**1. Expose native code to scripts** (Java, Kotlin, or C through your own JNI wrapper):
+
 ```kotlin
-val engine = VoltEngine.open(context, scriptDir, "main.py")
-val total = engine.invoke("price_with_tax", 100, "DE")     // call any script function
-val screen = engine.step(state, event)                     // or use the init/update/view contract
-VoltEngine.setHandler(myHandler)                           // answer android.* calls from scripts
+class Tax { fun rate(country: String) = if (country == "DE") 0.19 else 0.0 }
+class Clock { fun every(ms: Int, times: Int, cb: VoltCallback) { /* later */ cb.call(1) } }
+
+Volt.expose("Tax", Tax())                                   // available to every engine
+Volt.function("hostVersion") { args -> "2.4.1" }            // a single function
 ```
+
+Public methods are matched by name and argument count, and arguments are converted for you: numbers, strings, booleans, `Map`, `List`, arrays, `JSONObject`, `JSONArray`. A script function passed as an argument arrives as a `VoltCallback`. Return values go back to the script as JSON-compatible data.
+
+**2. Open an engine and call script functions:**
+
+```kotlin
+val engine = Volt.engine(context)
+    .source(ScriptSource.asset("scripts/pricing"))           // or .dir(file), .code("main.py", text), .url(zipUrl, publicKey)
+    .expose("Clock", Clock())                                // only for this engine
+    .on("tick") { name, data -> Log.i("app", "script says $data") }
+    .open()                                                  // or .openAsync { engine, error -> }
+
+val total = engine.invoke("price", 100, "DE")               // blocking; safe from any thread
+engine.invokeAsync("price", { value, error -> show(value) }, 100, "DE")   // result delivered on the main thread
+```
+
+**3. In the script** (the same in every language):
+
+```python
+def price(amount, country):
+    return amount * (1 + android.Tax.rate(country))          # call Java/Kotlin directly
+
+def start_ticks():
+    android.Clock.every(300, 3, lambda n: android.emit("tick", {"n": n}))   # pass a callback, send events
+```
+
+| language | call native code | pass a callback | send an event |
+|---|---|---|---|
+| Python | `android.Tax.rate("DE")` | any function or lambda | `android.emit("tick", data)` |
+| JavaScript | `android.Tax.rate('DE')` | any function | `android.emit('tick', data)` |
+| Lua | `android.Tax.rate("DE")` | any function | `android.emit("tick", data)` |
+| Ruby | `Android.Tax.rate("DE")` | a lambda / proc | `Android.emit("tick", data)` |
+| PHP | `Android::Tax()->rate('DE')` | a closure | `Android::emit('tick', $data)` |
+
+Native code calls a callback back with `cb.call(args…)` (queued on the script's thread) or `cb.callSync(args…)` (waits for the return value). Call `cb.release()` when it won't be called again. Each engine runs on its own thread, so scripts never block your UI thread.
+
+**4. Replace scripts at any time:**
+
+```kotlin
+engine.load(ScriptSource.url("https://cdn.example.com/pricing.zip", PUBLIC_KEY))   // download, verify signature, swap
+engine.load(ScriptSource.code("main.js", jsFromYourBackend))                       // or any code you have
+engine.update()                                                                    // re-check the current URL (uses ETag)
+```
+
+A new script can even be in a different language from the old one. A bundle with a bad signature is rejected, and the engine keeps the script it had. Publish bundles with `volt.py bundle <app>`, and print the public key with `volt.py pubkey`.
+
+**5. Show a screen written in a script** and get its result back:
+
+```kotlin
+Volt.openScreen(activity, ScriptSource.asset("scripts/checkout"), REQUEST_CHECKOUT)
+// the script ends the screen with _finish = {...}; the data arrives in onActivityResult as intent.getStringExtra("volt.result")
+```
+
+Script screens use the full component set, styling and device features described below, and can call your exposed objects too.
+
+A working example is in [examples/android-host](examples/android-host). It's a plain Java app that uses the `.aar` to do all five of the steps above. Build it with `python3 examples/android-host/build.py`; that script stands in for Gradle so the repo needs no Android Studio.
 
 ## Writing an app
 
@@ -387,8 +451,15 @@ With the network on:
 
 Earlier in the project, verified on the emulator: components, styling, tabs, dialogs, charts, canvas, web views, Java/Kotlin/C plugins, camera, GPS, notifications and reminders, background jobs, Bluetooth permissions and infinite lists. `.aab` builds pass `bundletool validate`.
 
+**SDK, verified on the emulator with the example host app** (plain Java + `.aar`):
+- **Native ↔ script calls:** Java called a Python function, and Python called an exposed Java object and a Java lambda.
+- **Callbacks and events:** Python passed a callback that Java called three times, and Python sent events to a Java listener.
+- **Runtime swaps:** the script was replaced at runtime with JavaScript from a string, then with a signed Lua bundle from a URL. Python, JavaScript and Lua ran side by side in one process.
+- **Script screen:** a Lua screen was opened from Java and returned its result to `onActivityResult`.
+
 **Not yet verified:**
 - A physical phone and a 32-bit (armeabi-v7a) build.
+- The `.aar` inside a real Gradle / Android Studio project. The example app uses a script that does the same steps as Gradle.
 - After the move to on-device engines: camera, GPS and background jobs (re-tested only before the move), and Python packages beyond the standard library.
 - A Play Console upload, the Docker image and the GitHub Actions pipeline.
 
@@ -411,7 +482,9 @@ volt.py              CLI, APK/AAB/AAR builder, dev server, releases, signed bund
 android/engine/      on-device engines: JNI bridge, per-language adapters, harnesses, prebuilt .so files
 runtimes/harness.*   preview bridges used by the web IDE and tests
 web/index.html       IDE + phone preview
-android/src/         native renderer + dev.volt.engine.VoltEngine (plain Java, no AndroidX)
+android/src/         native renderer + the SDK (dev.volt.engine: Volt, VoltEngine, ScriptSource, VoltCallback)
+android/stub/        tiny per-language JNI binding class (lets several languages run in one app)
+examples/            android-host: an existing-app integration example
 templates/           starter app for each language
 apps/<app>/          main.<ext>, lib/, assets/, tests/
 data/                runtime data (gitignored)

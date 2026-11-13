@@ -1,11 +1,16 @@
 (function (G) {
   const DIR = G.__VOLT_DIR, MAIN = G.__VOLT_MAIN, host = G.__host, read = G.__read;
-  const call = (o) => JSON.parse(host(JSON.stringify(o)));
+  const CBS = new Map(); let CBN = 0;
+  const enc = (v) => JSON.stringify(v, (k, x) => typeof x === 'function' ? (CBS.set(++CBN, x), { __volt_cb: CBN }) : x);
+  const call = (o) => JSON.parse(host(enc(o)));
   const fmt = (a) => a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' ');
   const log = (...a) => call({ op: 'log', text: fmt(a) });
   G.console = { log, info: log, warn: log, error: log, debug: log };
-  const android = new Proxy({ call(name, method, args) { const r = call({ op: 'call', plugin: name, method: method || '', args: args || {} }); if (r && r.error) throw new Error(r.error); return r && r.value; } },
-    { get: (t, k) => k in t ? t[k] : (method, args) => t.call(k, method, args) });
+  const hostcall = (name, method, args) => { const r = call({ op: 'call', plugin: name, method: method || '', args }); if (r && r.error) throw new Error(r.error); return r ? r.value : null; };
+  const target = (name) => new Proxy(function (method, args) { return hostcall(name, method, args || {}); },
+    { get: (t, m) => m === 'then' ? undefined : (...a) => hostcall(name, m, a) });
+  const android = new Proxy({ call: (n, m, a) => hostcall(n, m, a || {}), emit: (name, data) => { host(enc({ op: 'emit', name, data })); } },
+    { get: (t, k) => k in t ? t[k] : target(k) });
   G.android = android;
   const norm = (p) => { const out = []; for (const s of p.split('/')) { if (s === '..') out.pop(); else if (s && s !== '.') out.push(s); } return '/' + out.join('/'); };
   const cache = {};
@@ -36,16 +41,18 @@
     try {
       if (loadErr) throw loadErr;
       const a = JSON.parse(arg);
+      if (name === '__cb') { const f = CBS.get(a[0]); if (!f) throw new Error('callback was released'); const v = f(...a.slice(1)); return enc({ value: v === undefined ? null : v }); }
+      if (name === '__release') { CBS.delete(a[0]); return '{"value":true}'; }
       if (name === 'step') {
         let st = a.state;
         if (st == null) st = fn('init') ? fn('init')() : {};
         if (a.event != null && fn('update')) { const r = fn('update')(st, a.event); if (r !== undefined) st = r; }
-        return JSON.stringify({ state: st, ui: fn('view') ? fn('view')(st) : null });
+        return enc({ state: st, ui: fn('view') ? fn('view')(st) : null });
       }
       const f = fn(name);
       if (!f) throw new Error('no function ' + name);
       const v = f(...(Array.isArray(a) ? a : [a]));
-      return JSON.stringify({ value: v === undefined ? null : v });
+      return enc({ value: v === undefined ? null : v });
     } catch (e) { return JSON.stringify({ error: err(e) }); }
   };
 })(globalThis);

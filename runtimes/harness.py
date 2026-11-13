@@ -10,7 +10,13 @@ class _Android:
         if name == "storage": return (self.mem.__setitem__(a.get("key"), a.get("value")) or True) if method == "set" else self.mem.get(a.get("key")) if method == "get" else self.mem
         if name == "clipboard": return (self.mem.__setitem__("_clip", a.get("text")) or True) if method == "set" else self.mem.get("_clip")
         return None
-    def __getattr__(self, name): return lambda method="", args=None: self.call(name, method, args)
+    def emit(self, name, data=None): pass
+    def __getattr__(self, name):
+        me = self
+        class T:
+            def __call__(self, method="", args=None): return me.call(name, method, args)
+            def __getattr__(self, m): return lambda *a: me.call(name, m, list(a))
+        return T()
 import builtins; builtins.android = _Android()
 mod, load_err = None, None
 try:
