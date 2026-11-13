@@ -980,7 +980,7 @@ public class MainActivity extends Activity {
         LinearLayout ll = form("⚡ Polymorph");
         TextView sub = new TextView(this); sub.setText("Connect to your computer running `poly.py serve`. Code is downloaded and runs on this phone."); sub.setTextColor(0xFF6B7280); ll.addView(sub);
         final EditText url = new EditText(this);
-        url.setSingleLine(true); url.setHint("http://192.168.1.10:8787");
+        url.setSingleLine(true); url.setHint("http://your-computer-ip:8787");
         url.setText(server.isEmpty() ? "http://10.0.2.2:8787" : server);
         url.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
         ll.addView(url, wide());

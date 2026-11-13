@@ -1267,7 +1267,7 @@ def main():
     r = sub.add_parser("release", help="snapshot an app as a release (tests must pass)"); r.add_argument("name"); r.add_argument("--note", default=""); r.add_argument("--deploy", action="store_true"); r.add_argument("--force", action="store_true")
     d = sub.add_parser("deploy", help="point production at a release (deploy or rollback)"); d.add_argument("name"); d.add_argument("n", type=int)
     b = sub.add_parser("apk", help="build a signed APK"); b.add_argument("name", nargs="?", help="app name (omit for the generic player)")
-    b.add_argument("--dev", metavar="URL", help="live-reload build: the phone syncs code from this dev server (e.g. http://192.168.1.10:8787)")
+    b.add_argument("--dev", metavar="URL", help="live-reload build: the phone syncs code from this dev server (e.g. http://YOUR-COMPUTER-IP:8787; `poly.py serve` prints it)")
     b.add_argument("--server", metavar="URL", help='server that hosts signed script updates (used when app.json has "updates")')
     b.add_argument("--format", default="apk", choices=["apk", "aab"]); b.add_argument("--label"); b.add_argument("--out"); b.add_argument("--install", action="store_true")
     bu = sub.add_parser("bundle", help="write a signed script bundle (<app>.zip + .sig) to host anywhere for over-the-air updates"); bu.add_argument("name"); bu.add_argument("--out", default=".")

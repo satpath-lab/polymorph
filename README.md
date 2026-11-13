@@ -134,8 +134,10 @@ def view(state):
 **3. See it live** while you edit, in the browser (`poly.py serve`) or on your phone:
 
 ```bash
-python3 poly.py apk shop --dev http://192.168.1.10:8787     # the phone reloads every time you save
+python3 poly.py apk shop --dev http://YOUR-COMPUTER-IP:8787     # the phone reloads every time you save
 ```
+
+`poly.py serve` prints the exact address to use (look for the `devices:` line). Your phone and computer must be on the same Wi-Fi. For the Android emulator, use `http://10.0.2.2:8787`.
 
 **4. Build the real app:**
 
